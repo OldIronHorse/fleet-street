@@ -28,7 +28,7 @@ jobs:
         uses: roc-lang/setup-roc@v0.3.0
         with:
           version: nightly-new-compiler
-          nightly-tag: nightly-2026-10-09-258ab27
+          nightly-tag: nightly-2026-10-27-de79a0f
       - name: Check the Roc version
         run: roc --version
       - name: Unit Tests
