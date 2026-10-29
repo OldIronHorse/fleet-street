@@ -2,12 +2,12 @@ Html := {}.{
     Doc := {
         lang: Str ?? "en",
         head: Head,
-        body: List(Content) ?? []
+        body: List(Block) ?? []
     }.{
         Head := { title: Str }.{
             render : Head -> Str
             render = |h|
-                "<head><title>${Text(h.title) |> render_content()}</title></head>"
+                "<head><title>${Text(h.title) |> render_inline()}</title></head>"
         }
 
         empty : Head -> Doc
@@ -17,7 +17,7 @@ Html := {}.{
         with_lang : Doc, Str -> Doc
         with_lang = |doc, lang| { ..doc, lang }
 
-        with_body : Doc, List(Content) -> Doc
+        with_body : Doc, List(Block) -> Doc
         with_body = |doc, body| { ..doc, body }
 
         render : Doc -> Str
@@ -25,45 +25,50 @@ Html := {}.{
             "<!DOCTYPE html>\n<html lang=\"${doc.lang}\">${doc.head.render()}${render_body(doc.body)}</html>"
     }
 
-    Inline : [
+    Inline := [
         Text(Str),
         Strong(List(Inline)),
     ]
 
-    Block : [
+    Block := [
         Heading({ level: U64, content: List(Inline) }),
         Paragraph(List(Inline)),
     ]
 }
 
-render_body : List(Content) -> Str
+render_body : List(Block) -> Str
 render_body = |body|
     if body.is_empty()
         ""
     else
-        "<body>${body.map(render_content) |> Str.join_with("")}</body>"
+        "<body>${body.map(render_block) |> Str.join_with("")}</body>"
 
-render_content : Content -> Str
-render_content = |c|
-    match c {
-        Text(s) => s.replace_each("&", "&amp;").replace_each(">", "&gt;").replace_each("<", "&lt;")
-        Strong(content) => "<strong>${content.map(render_content) |> Str.join_with("")}</strong>"
+render_block : Block -> Str
+render_block = |b|
+    match b {
         Heading({level, content}) =>
-            "<h${level.to_str()}>${content.map(render_content) |> Str.join_with("")}</h${level.to_str()}>"
-        Paragraph(content) => "<p>${content.map(render_content) |> Str.join_with("")}</p>"
+            "<h${level.to_str()}>${content.map(render_inline) |> Str.join_with("")}</h${level.to_str()}>"
+        Paragraph(content) => "<p>${content.map(render_inline) |> Str.join_with("")}</p>"
     }
 
-expect "a &gt; b &amp; c &lt; d" == Text("a > b & c < d") |> render_content()
+render_inline : Inline -> Str
+render_inline = |c|
+    match c {
+        Text(s) => s.replace_each("&", "&amp;").replace_each(">", "&gt;").replace_each("<", "&lt;")
+        Strong(content) => "<strong>${content.map(render_inline) |> Str.join_with("")}</strong>"
+    }
+
+expect "a &gt; b &amp; c &lt; d" == Text("a > b & c < d") |> render_inline()
 
 expect "<h1>Shopping List</h1>"
     == Heading({ level: 1, content: [Text("Shopping List")] })
-        |> render_content()
+        |> render_block()
 expect "<p>Shopping List</p>"
     == Paragraph([Text("Shopping List")])
-        |> render_content()
+        |> render_block()
 expect "<p>Shopping <strong>List</strong></p>"
     == Paragraph([Text("Shopping "), Strong([Text("List")])])
-        |> render_content()
+        |> render_block()
 
 expect \\<!DOCTYPE html>
         \\<html lang=\"en\"><head><title>1234</title></head></html>
