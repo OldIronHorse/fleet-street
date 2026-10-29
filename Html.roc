@@ -1,14 +1,28 @@
 Html := {}.{
-    Doc := { body: List(Content) ?? [] }.{
-        empty : Doc
-        empty = Doc.{}
+    Doc := {
+        lang: Str ?? "en",
+        head: Head,
+        body: List(Content) ?? []
+    }.{
+        Head := { title: Str }.{
+            render : Head -> Str
+            render = |h|
+                "<head><title>${Text(h.title) |> render_content()}</title></head>"
+        }
+
+        empty : Head -> Doc
+        empty = |head|
+            Doc.{ head }
+
+        with_lang : Doc, Str -> Doc
+        with_lang = |doc, lang| { ..doc, lang }
 
         with_body : Doc, List(Content) -> Doc
         with_body = |doc, body| { ..doc, body }
 
         render : Doc -> Str
         render = |doc|
-            "<!DOCTYPE html>\n<html>${render_body(doc.body)}</html>"
+            "<!DOCTYPE html>\n<html lang=\"${doc.lang}\">${doc.head.render()}${render_body(doc.body)}</html>"
     }
 
     Content := [
@@ -49,13 +63,13 @@ expect "<p>Shopping <strong>List</strong></p>"
         |> render_content()
 
 expect \\<!DOCTYPE html>
-        \\<html></html>
-    == Doc.empty.render()
+        \\<html lang=\"en\"><head><title>1234</title></head></html>
+    == Doc.empty({ title: "1234" }).render()
 
 expect {
     expected = \\<!DOCTYPE html>
-               \\<html><body><h1>Shopping List</h1></body></html>
-    actual = Doc.empty
+               \\<html lang="en"><head><title>abcde</title></head><body><h1>Shopping List</h1></body></html>
+    actual = Doc.empty({ title: "abcde" })
         .with_body([Heading({ level: 1, content: [Text("Shopping List")] })])
         .render()
     actual == expected
