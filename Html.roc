@@ -63,6 +63,7 @@ expect "a &gt; b &amp; c &lt; d" == Text("a > b & c < d") |> render_inline()
 expect "<h1>Shopping List</h1>"
     == Heading({ level: 1, content: [Text("Shopping List")] })
         |> render_block()
+expect "<p></p>" == Paragraph([]) |> render_block()
 expect "<p>Shopping List</p>"
     == Paragraph([Text("Shopping List")])
         |> render_block()
