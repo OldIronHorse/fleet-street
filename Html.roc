@@ -29,12 +29,14 @@ render_body = |body|
 render_content : Content -> Str
 render_content = |c|
     match c {
-        Text(s) => s
+        Text(s) => s.replace_each("&", "&amp;").replace_each(">", "&gt;").replace_each("<", "&lt;")
         Strong(content) => "<strong>${content.map(render_content) |> Str.join_with("")}</strong>"
         Heading({level, content}) =>
             "<h${level.to_str()}>${content.map(render_content) |> Str.join_with("")}</h${level.to_str()}>"
         Paragraph(content) => "<p>${content.map(render_content) |> Str.join_with("")}</p>"
     }
+
+expect "a &gt; b &amp; c &lt; d" == Text("a > b & c < d") |> render_content()
 
 expect "<h1>Shopping List</h1>"
     == Heading({ level: 1, content: [Text("Shopping List")] })
