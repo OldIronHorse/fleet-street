@@ -62,6 +62,27 @@ Html := {}.{
                 H6 => "6"
             }
     }
+
+    Url := [
+        Https({ host: Str, path: List(Str) }),
+        Http({ host: Str, path: List(Str) }),
+        File(List(Str)),
+        MailTo({ user: Str, domain: Str }),
+        Relative(Str),
+    ].{
+        to_str : Url -> Str
+        to_str = |url|
+            match url {
+                Https({host, path}) => "https://${host}/${path |> Str.join_with("/")}"
+                _ => { crash "not implemented" }
+            }
+    }
+
+    Link := { label: Inline, url: Url }.{
+        render : Link -> Str
+        render = |link|
+            "<a href=\"${link.url.to_str()}\">${link.label |> render_inline()}</a>"
+    }
 }
 
 render_body : List(Block) -> Str
@@ -179,3 +200,13 @@ expect "<body><p>first</p><p>second</p><p>third</p></body>"
         Paragraph({ children: [Text("second")] }),
         Paragraph({ children: [Text("third")] }),
     ] |> render_body()
+
+expect "https://example.com/one/two/three/four.html"
+    == Https({ host: "example.com", path: ["one", "two", "three", "four.html"] })
+        |> Url.to_str()
+
+expect "<a href=\"https://example.com/one/two.html\">The Link</a>"
+    ==  Link.{
+        url: Https({ host: "example.com", path: ["one", "two.html"] }),
+        label: Text("The Link"),
+    }.render()
