@@ -69,6 +69,9 @@ expect "<p>Shopping List</p>"
 expect "<p>Shopping <strong>List</strong></p>"
     == Paragraph([Text("Shopping "), Strong([Text("List")])])
         |> render_block()
+expect "<p>Shopping <strong><strong>List</strong></strong></p>"
+    == Paragraph([Text("Shopping "), Strong([Strong([Text("List")])])])
+        |> render_block()
 
 expect \\<!DOCTYPE html>
         \\<html lang=\"en\"><head><title>1234</title></head></html>
