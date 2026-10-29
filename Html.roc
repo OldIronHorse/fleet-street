@@ -25,11 +25,14 @@ Html := {}.{
             "<!DOCTYPE html>\n<html lang=\"${doc.lang}\">${doc.head.render()}${render_body(doc.body)}</html>"
     }
 
-    Content := [
+    Inline : [
         Text(Str),
-        Strong(List(Content)),
-        Heading({ level: U64, content: List(Content) }),
-        Paragraph(List(Content)),
+        Strong(List(Inline)),
+    ]
+
+    Block : [
+        Heading({ level: U64, content: List(Inline) }),
+        Paragraph(List(Inline)),
     ]
 }
 
