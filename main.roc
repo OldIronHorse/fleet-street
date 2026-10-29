@@ -9,7 +9,43 @@ app [main!] {
 }
 
 import cli.Stdout
+import parser.Markdown
+import Html
 
-main! = |_| {
-    Stdout.line!("placeholder...")
+source =
+    \\# Shopping
+    \\
+    \\Buy these *today*:
+    \\
+    \\- [x] apples
+    \\- [ ] pears
+    \\
+    \\> Quoted
+    \\
+    \\```roc
+    \\main = 1
+    \\```
+    \\
+    \\| Item | Qty |
+    \\| :--- | --: |
+    \\| pear | 2 |
+    \\
+    \\***
+    \\
+    \\<div>raw</div>
+
+main! = |_args| {
+    blocks = Markdown.parse_str(source)
+    for block in blocks {
+        Stdout.line!(Str.inspect(block))?
+    }
+    loose_list!()
+}
+
+loose_list! = || {
+    blocks = Markdown.parse_str("3. first\n\n4. second\n")
+    for block in blocks {
+        Stdout.line!(Str.inspect(block))?
+    }
+    Ok({})
 }
