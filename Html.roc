@@ -86,3 +86,7 @@ expect {
         .render()
     actual == expected
 }
+
+expect "<body><p>first</p><p>second</p><p>third</p></body>"
+    == [Paragraph([Text("first")]), Paragraph([Text("second")]), Paragraph([Text("third")])]
+        |> render_body()
