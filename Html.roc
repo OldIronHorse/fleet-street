@@ -79,7 +79,8 @@ Html := {}.{
                             "" 
                         else
                             Str.join_with(hs.query.map(|p| p.url_encode()), "&").with_prefix("?")
-                    "${hs.scheme.to_str()}://${url_encode(hs.host)}${port}/${hs.path.map(url_encode) |> Str.join_with("/")}${query}"
+                    fragment = hs.fragment.map_ok(|f| "#${f}").ok_or("")
+                    "${hs.scheme.to_str()}://${url_encode(hs.host)}${port}/${hs.path.map(url_encode) |> Str.join_with("/")}${query}${fragment}"
                 }
                 MailTo(mt) => {
                     subject = if mt.subject.is_empty() [] else ["subject=${url_encode(mt.subject)}"]
@@ -102,6 +103,7 @@ Html := {}.{
         path: List(Str),
         scheme: Scheme ?? Https
         query: List(QueryParam) ?? [],
+        fragment: Try(Str, [None]) ?? Err(None),
     }
 
     Scheme := [Http, Https].{
@@ -267,6 +269,13 @@ expect "http://example.com/one/two/three/four.html"
 expect "https://example.com/one/two/three/four.html"
     == Http({ host: "example.com", path: ["one", "two", "three", "four.html"] })
         |> Url.to_str()
+
+expect "https://example.com/one/two/three/four.html#section1"
+    == Http({
+        host: "example.com",
+        path: ["one", "two", "three", "four.html"],
+        fragment: Ok("section1")
+    }) |> Url.to_str()
 
 expect "https://example.com:8000/one/two/three/four.html"
     == Http({ host: "example.com", port: Ok(8000), path: ["one", "two", "three", "four.html"] })
