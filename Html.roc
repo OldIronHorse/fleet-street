@@ -28,8 +28,20 @@ Html := {}.{
     Inline := [
         Text(Str),
         Strong(List(Inline)),
-        Link({ label: Inline, url: Url }),
+        Link({ label: List(LinkContent), url: Url }),
     ]
+
+    LinkContent := [
+        Text(Str),
+        Strong(List(LinkContent)),
+    ].{
+        to_inline : LinkContent -> Inline
+        to_inline = |c|
+            match c {
+                Text(s) => Text(s)
+                Strong(cs) => Strong(cs.map(to_inline))
+            }
+    }
 
     Block := [
         Heading(HeadingSpec),
@@ -79,8 +91,8 @@ Html := {}.{
                             "" 
                         else
                             Str.join_with(hs.query.map(|p| p.url_encode()), "&").with_prefix("?")
-                    fragment = hs.fragment.map_ok(|f| "#${f}").ok_or("")
-                    "${hs.scheme.to_str()}://${url_encode(hs.host)}${port}/${hs.path.map(url_encode) |> Str.join_with("/")}${query}${fragment}"
+                    fragment = hs.fragment.map_ok(|f| "#${url_encode(f)}").ok_or("")
+                    "${hs.scheme.to_str()}://${hs.host.to_str()}${port}/${hs.path.map(url_encode) |> Str.join_with("/")}${query}${fragment}"
                 }
                 MailTo(mt) => {
                     subject = if mt.subject.is_empty() [] else ["subject=${url_encode(mt.subject)}"]
@@ -97,8 +109,36 @@ Html := {}.{
             }
     }
 
+    Host :: { name: Str }.{
+        whitelist = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-"
+            .to_utf8()
+            |> Set.from_list()
+
+        from_str : Str -> Try(Host, [InvalidHost])
+        from_str = |s| {
+            if s.count_utf8_bytes().is_lte(253)
+                and (s.split_on(".")
+                    .all(|label|
+                        label.starts_with("-").not()
+                            and (label.ends_with("-").not())
+                            and (label.is_empty().not())
+                            and (label.count_utf8_bytes() <= 63)
+                            and (label.to_utf8().all(|c| whitelist.contains(c)))))
+                Ok({ name: s })
+            else
+                Err(InvalidHost)
+        }
+
+        to_str : Host -> Str
+        to_str = |host| host.name
+
+        is_eq : Host, Host -> Bool
+        is_eq = |this, that|
+            this.name == that.name
+    }
+
     HttpSpec := {
-        host: Str,
+        host: Host,
         port: Try(U64, [None]) ?? Err(None),
         path: List(Str),
         scheme: Scheme ?? Https,
@@ -160,7 +200,7 @@ render_inline = |c|
         Text(s) => escape(s)
         Strong(content) => "<strong>${render_inlines(content)}</strong>"
         Link({ url, label }) =>
-            "<a href=\"${url.to_str()}\">${label |> render_inline()}</a>"
+            "<a href=\"${escape(url.to_str())}\">${label.map(|l| l.to_inline()) |> render_inlines()}</a>"
     }
 
 render_inlines : List(Inline) -> Str
@@ -195,22 +235,16 @@ render_attrs = |attrs| {
 }
 
 hex_digits = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F"]
+hex_digit = |n| hex_digits.get(n.to_u64()).ok_or("0")
 
 as_hex : U8 -> Str
-as_hex = |n| {
-    do = |x, ds|
-        if x == 0
-            ds |> Str.join_with("")
-        else
-            do(x.div_by(16), ds.prepend(hex_digits.get(x.rem_by(16).to_u64()).ok_or(""))) # it shouldn't be possible for the List.get to fail...
+as_hex = |n| "${n.div_by(16) |> hex_digit()}${n.rem_by(16) |> hex_digit()}"
 
-    do(n, [])
-}
-
-
-expect "F" == as_hex(15.U8)
-expect "10" == as_hex(16.U8)
-expect "FF" == as_hex(255.U8)
+expect "00" == as_hex(0)
+expect "0A" == as_hex(10)
+expect "0F" == as_hex(15)
+expect "10" == as_hex(16)
+expect "FF" == as_hex(255)
 
 expect "a &gt; b &amp; c &lt; d &quot;" == Text("a > b & c < d \"") |> render_inline()
 
@@ -287,42 +321,45 @@ expect "<body><p>first</p><p>second</p><p>third</p></body>"
     ] |> render_body()
 
 expect "http://example.com/one/two/three/four.html"
-    == Http({ scheme: Http, host: "example.com", path: ["one", "two", "three", "four.html"] })
+    == Http({ scheme: Http, host: Host.from_str("example.com")?, path: ["one", "two", "three", "four.html"] })
         |> Url.to_str()
 
 expect "https://example.com/one/two/three/four.html"
-    == Http({ host: "example.com", path: ["one", "two", "three", "four.html"] })
+    == Http({ host: Host.from_str("example.com")?, path: ["one", "two", "three", "four.html"] })
         |> Url.to_str()
 
-expect "https://example.com/one/two/three/four.html#section1"
+expect "https://example.com/one/two/three/four.html#section%201"
     == Http({
-        host: "example.com",
+        host: Host.from_str("example.com")?,
         path: ["one", "two", "three", "four.html"],
-        fragment: Ok("section1")
+        fragment: Ok("section 1")
     }) |> Url.to_str()
 
 expect "https://example.com:8000/one/two/three/four.html"
-    == Http({ host: "example.com", port: Ok(8000), path: ["one", "two", "three", "four.html"] })
-        |> Url.to_str()
-
-expect "https://example.com/one/two/three/four.html?name=Joe%20Bloggs&age=45"
     == Http({
-        host: "example.com", 
-        path: ["one", "two", "three", "four.html"],
-        query: [{ key: "name", value: "Joe Bloggs" }, { key: "age", value: "45" }],
+        host: Host.from_str("example.com")?,
+        port: Ok(8000),
+        path: ["one", "two", "three", "four.html"]
     }) |> Url.to_str()
 
-expect "<a href=\"https://example.com/one%20more/two.html\">The Link</a>"
-    ==  Link({
-        url: Http({ host: "example.com", path: ["one more", "two.html"] }),
-        label: Text("The Link"),
+expect "https://example.com/one/two/three/four.html?name=Joe%20Bl%26ggs&age=4%235"
+    == Http({
+        host: Host.from_str("example.com")?,
+        path: ["one", "two", "three", "four.html"],
+        query: [{ key: "name", value: "Joe Bl&ggs" }, { key: "age", value: "4#5" }],
+    }) |> Url.to_str()
+
+expect "<a href=\"https://example.com/one%20mor%C3%A9%3F%23%2F%25/two.html\">The Link</a>"
+    == Link({
+        url: Http({ host: Host.from_str("example.com")?, path: ["one moré?#/%", "two.html"] }),
+        label: [Text("The Link")],
     }) |> render_inline()
 expect {
-    expected ="<a href=\"mailto:someone@example.com?subject=Feedback%20Request&body=Please%20provide%20feedback.&cc=cc1@elsewhere.com&cc=cc2@example.com&bcc=bc1@elsewhere.com&bcc=bc2@example.com\">Send Feedback</a>"
-    actual =  Link({
+    expected ="<a href=\"mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link&amp;body=Please%20provide%20feedback.&amp;cc=cc1@elsewhere.com&amp;cc=cc2@example.com&amp;bcc=bc1@elsewhere.com&amp;bcc=bc2@example.com\">Send Feedback</a>"
+    actual = Link({
         url: MailTo({
             to: { recipient: "someone", domain: "example.com" },
-            subject: "Feedback Request",
+            subject: "Feedback Request & Link",
             body: "Please provide feedback.",
             cc: [
                 { recipient: "cc1", domain: "elsewhere.com"},
@@ -333,12 +370,25 @@ expect {
                 { recipient: "bc2", domain: "example.com" },
             ],
         }),
-        label: Text("Send Feedback"),
+        label: [Text("Send Feedback")],
     }) |> render_inline()
     actual == expected
 }
 expect "<a href=\"../one%20more/two.html\">The Link</a>"
-    ==  Link({
+    ==Link({
         url: Relative(["..", "one more", "two.html"]),
-        label: Text("The Link"),
+        label: [Text("The Link")],
     }) |> render_inline()
+expect {
+    expected = "<a href=\"javascript%3Aalert%281%29\">The Link</a>"
+    actual = Link({
+        url: Relative(["javascript:alert(1)"]),
+        label: [Text("The Link")],
+    }) |> render_inline()
+    actual == expected
+}
+
+expect "example.com" == Host.from_str("example.com")?.to_str()
+expect Err(InvalidHost) == Host.from_str("example-.com")
+expect Err(InvalidHost) == Host.from_str("example.-com")
+expect Err(InvalidHost) == Host.from_str("exa\"mple.com")
