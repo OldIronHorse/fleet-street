@@ -101,7 +101,7 @@ Html := {}.{
         host: Str,
         port: Try(U64, [None]) ?? Err(None),
         path: List(Str),
-        scheme: Scheme ?? Https
+        scheme: Scheme ?? Https,
         query: List(QueryParam) ?? [],
         fragment: Try(Str, [None]) ?? Err(None),
     }
