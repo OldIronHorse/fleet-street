@@ -136,13 +136,19 @@ Html := {}.{
     }
 }
 
+url_whitelist = "-._~abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    .to_utf8()
+    |> Set.from_list()
+
 url_encode : Str -> Str
 url_encode = |s|
-    s.replace_each(" ", "%20")
-        .replace_each("\"", "%22")
-        .replace_each("/", "%2F")
-        .replace_each("?", "%2F")
-        .replace_each("#", "%3F")
+    s.to_utf8()
+        .map(|c|
+            if url_whitelist.contains(c)
+                Str.from_utf8_lossy([c])
+            else
+                "%${as_hex(c)}")
+        |> Str.join_with("")
 
 render_body : List(Block) -> Str
 render_body = |body|
@@ -187,6 +193,24 @@ render_attrs = |attrs| {
     }
     id_.concat(class)
 }
+
+hex_digits = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F"]
+
+as_hex : U8 -> Str
+as_hex = |n| {
+    do = |x, ds|
+        if x == 0
+            ds |> Str.join_with("")
+        else
+            do(x.div_by(16), ds.prepend(hex_digits.get(x.rem_by(16).to_u64()).ok_or(""))) # it shouldn't be possible for the List.get to fail...
+
+    do(n, [])
+}
+
+
+expect "F" == as_hex(15.U8)
+expect "10" == as_hex(16.U8)
+expect "FF" == as_hex(255.U8)
 
 expect "a &gt; b &amp; c &lt; d &quot;" == Text("a > b & c < d \"") |> render_inline()
 
