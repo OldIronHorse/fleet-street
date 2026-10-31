@@ -30,6 +30,7 @@ Html := {}.{
     Inline := [
         Text(Str),
         Strong(List(Inline)),
+        Emphasis(List(Inline)),
         Link({ label: List(LinkContent), url: Url }),
         Image(ImageSpec),
     ]
@@ -37,6 +38,7 @@ Html := {}.{
     LinkContent := [
         Text(Str),
         Strong(List(LinkContent)),
+        Emphasis(List(LinkContent)),
         Image(ImageSpec),
     ].{
         to_inline : LinkContent -> Inline
@@ -44,6 +46,7 @@ Html := {}.{
             match c {
                 Text(s) => Text(s)
                 Strong(cs) => Strong(cs.map(to_inline))
+                Emphasis(cs) => Emphasis(cs.map(to_inline))
                 Image(s) => Image(s)
             }
     }
@@ -53,7 +56,13 @@ Html := {}.{
         Paragraph(ParagraphSpec),
         UnorderedList(ListSpec),
         OrderedList(ListSpec),
+        Div(DivSpec),
     ]
+
+    DivSpec := {
+        attrs: Attrs ?? {},
+        children: List(Block),
+    }
 
     ImageSpec := {
         attrs:  Attrs ?? {},
@@ -123,6 +132,7 @@ render_inline = |c|
     match c {
         Text(s) => escape(s)
         Strong(content) => "<strong>${render_inlines(content)}</strong>"
+        Emphasis(content) => "<em>${render_inlines(content)}</em>"
         Link({ url, label }) =>
             "<a href=\"${escape(url.to_str())}\">${label.map(|l| l.to_inline()) |> render_inlines()}</a>"
         Image(s) => {
@@ -165,6 +175,8 @@ render_block = |b|
             "<ul${render_attrs(ls.attrs)}>${render_list_items(ls.items)}</ul>"
         OrderedList(ls) =>
             "<ol${render_attrs(ls.attrs)}>${render_list_items(ls.items)}</ol>"
+        Div(ds) =>
+            "<div${render_attrs(ds.attrs)}>${ds.children.map(render_block) |> Str.join_with("")}</div>"
     }
 
 render_attrs : Attrs -> Str
@@ -389,5 +401,21 @@ expect {
         width: Px(128),
         height: Px(256),
     }) |> render_inline()
+    actual == expected
+}
+
+expect "<em>some text</em>" == Emphasis([Text("some text")]) |> render_inline()
+expect {
+    expected = "<div><h1>some text</h1></div>"
+    actual = Div({ children: [Heading({ level: H1, children: [Text("some text")] }) ]})
+        |> render_block()
+    actual == expected
+}
+expect {
+    expected = "<div id=\"1234\" class=\"one two\"><h1>some text</h1></div>"
+    actual = Div({
+        children: [Heading({ level: H1, children: [Text("some text")] })],
+        attrs: { id: "1234", classes: ["one", "two"] },
+    }) |> render_block()
     actual == expected
 }
