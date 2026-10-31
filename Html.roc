@@ -387,6 +387,10 @@ expect {
 }
 
 expect "example.com" == Host.from_str("example.com")?.to_str()
+expect Err(InvalidHost) == Host.from_str("")
+expect Err(InvalidHost) == Host.from_str("a..b")
+expect Err(InvalidHost) == Host.from_str(".com")
+expect Err(InvalidHost) == Host.from_str("example.com-")
 expect Err(InvalidHost) == Host.from_str("example-.com")
 expect Err(InvalidHost) == Host.from_str("example.-com")
 expect Err(InvalidHost) == Host.from_str("exa\"mple.com")
