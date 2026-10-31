@@ -9,7 +9,7 @@ Html := {}.{
         Head := { title: Str }.{
             render : Head -> Str
             render = |h|
-                "<head><title>${escape(h.title)}</title></head>"
+                "<head><meta charset=\"utf-8\"><title>${escape(h.title)}</title></head>"
         }
 
         with_head : Head -> Doc
@@ -31,17 +31,20 @@ Html := {}.{
         Text(Str),
         Strong(List(Inline)),
         Link({ label: List(LinkContent), url: Url }),
+        Image(ImageSpec),
     ]
 
     LinkContent := [
         Text(Str),
         Strong(List(LinkContent)),
+        Image(ImageSpec),
     ].{
         to_inline : LinkContent -> Inline
         to_inline = |c|
             match c {
                 Text(s) => Text(s)
                 Strong(cs) => Strong(cs.map(to_inline))
+                Image(s) => Image(s)
             }
     }
 
@@ -51,6 +54,26 @@ Html := {}.{
         UnorderedList(ListSpec),
         OrderedList(ListSpec),
     ]
+
+    ImageSpec := {
+        attrs:  Attrs ?? {},
+        url: Url,
+        alt: Str,
+        height: Length ?? None,
+        width: Length ?? None,
+    }
+
+    Length := [
+        None,
+        Px(U64),
+    ].{
+        to_style : Length, Str -> Str
+        to_style = |l, tag|
+            match l {
+                None => ""
+                Px(n) => "${tag}:${n.to_str()}px;"
+            }
+    }
 
     ListSpec := {
         attrs: Attrs ?? {},
@@ -102,6 +125,12 @@ render_inline = |c|
         Strong(content) => "<strong>${render_inlines(content)}</strong>"
         Link({ url, label }) =>
             "<a href=\"${escape(url.to_str())}\">${label.map(|l| l.to_inline()) |> render_inlines()}</a>"
+        Image(s) => {
+            style = "${s.width.to_style("width")}${s.height.to_style("height")}"
+            "<img src=\"${escape(s.url.to_str())}\" alt=\"${escape(s.alt)}\""
+                .concat(if style.is_empty() "" else " style=\"${style}\"")
+                .concat(">")
+        }
     }
 
 render_inlines : List(Inline) -> Str
@@ -198,24 +227,24 @@ expect "<p>Shopping <strong><strong>List</strong></strong></p>"
         |> render_block()
 
 expect \\<!DOCTYPE html>
-       \\<html lang="en"><head><title>12&lt;34</title></head><body></body></html>
+       \\<html lang="en"><head><meta charset="utf-8"><title>12&lt;34</title></head><body></body></html>
     == Doc.with_head({ title: "12<34" })
         .render()
 expect \\<!DOCTYPE html>
-       \\<html lang="en&quot;x"><head><title>12&lt;34</title></head><body></body></html>
+       \\<html lang="en&quot;x"><head><meta charset="utf-8"><title>12&lt;34</title></head><body></body></html>
     == Doc.with_head({ title: "12<34" })
         .with_lang("en\"x")
         .render()
 expect {
     expected = \\<!DOCTYPE html>
-               \\<html lang="en"><head><title>abcde</title></head><body><h1>Shopping List</h1></body></html>
+               \\<html lang="en"><head><meta charset="utf-8"><title>abcde</title></head><body><h1>Shopping List</h1></body></html>
     actual = Doc.with_head({ title: "abcde" })
         .with_body([Heading({ level: H1, children: [Text("Shopping List")] })])
         .render()
     actual == expected
 }
 expect \\<!DOCTYPE html>
-       \\<html lang="en"><head><title>1234</title></head><body><ul><li>first</li></ul></body></html>
+       \\<html lang="en"><head><meta charset="utf-8"><title>1234</title></head><body><ul><li>first</li></ul></body></html>
     == Doc.with_head({ title: "1234" })
         .with_body([UnorderedList({ items: [Inlines([Text("first")])] })])
         .render()
@@ -341,5 +370,24 @@ expect {
         Blocks([UnorderedList({ items: [Inlines([Text("second 1")]), Inlines([Text("second 2")])] })]),
         Inlines([Text("third")]),
     ] }) |> render_block()
+    actual == expected
+}
+
+expect {
+    expected = "<img src=\"images/trees.jpg\" alt=\"Some trees &amp; bushes\">"
+    actual = Image({
+        url: Relative({ path: ["images", "trees.jpg"] }),
+        alt: "Some trees & bushes",
+    }) |> render_inline()
+    actual == expected
+}
+expect {
+    expected = "<img src=\"images/trees.jpg\" alt=\"Some trees &amp; bushes\" style=\"width:128px;height:256px;\">"
+    actual = Image({
+        url: Relative({ path: ["images", "trees.jpg"] }),
+        alt: "Some trees & bushes",
+        width: Px(128),
+        height: Px(256),
+    }) |> render_inline()
     actual == expected
 }
