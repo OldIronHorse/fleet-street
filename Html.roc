@@ -214,6 +214,11 @@ expect {
         .render()
     actual == expected
 }
+expect \\<!DOCTYPE html>
+       \\<html lang="en"><head><title>1234</title></head><body><ul><li>first</li></ul></body></html>
+    == Doc.with_head({ title: "1234" })
+        .with_body([UnorderedList({ items: [Inlines([Text("first")])] })])
+        .render()
 
 expect "<body><p>first</p><p>second</p><p>third</p></body>"
     == [
