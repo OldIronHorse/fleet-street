@@ -48,6 +48,18 @@ Html := {}.{
     Block := [
         Heading(HeadingSpec),
         Paragraph(ParagraphSpec),
+        UnorderedList(ListSpec),
+        OrderedList(ListSpec),
+    ]
+
+    ListSpec := {
+        attrs: Attrs ?? {},
+        items: List(ListItem),
+    }
+
+    ListItem := [
+        Inlines(List(Inline)),
+        Blocks(List(Block)),
     ]
 
     Attrs := {
@@ -97,6 +109,15 @@ render_inlines = |content|
     content.map(render_inline)
         |> Str.join_with("")
 
+render_list_items : List(ListItem) -> Str
+render_list_items = |items|
+    items.map(|i|
+        match i {
+            Inlines(ils) => "<li>${render_inlines(ils)}</li>"
+            Blocks(bs) => "<li>${bs.map(render_block) |> Str.join_with("")}</li>"
+        })
+        |> Str.join_with("")
+
 escape : Str -> Str
 escape = |s|
     s.replace_each("&", "&amp;")
@@ -111,6 +132,10 @@ render_block = |b|
             "<h${hs.level.to_str()}${render_attrs(hs.attrs)}>${render_inlines(hs.children)}</h${hs.level.to_str()}>"
         Paragraph(ps) =>
             "<p${render_attrs(ps.attrs)}>${render_inlines(ps.children)}</p>"
+        UnorderedList(ls) =>
+            "<ul${render_attrs(ls.attrs)}>${render_list_items(ls.items)}</ul>"
+        OrderedList(ls) =>
+            "<ol${render_attrs(ls.attrs)}>${render_list_items(ls.items)}</ol>"
     }
 
 render_attrs : Attrs -> Str
@@ -238,5 +263,51 @@ expect {
         url: Relative(["javascript:alert(1)"]),
         label: [Text("The Link")],
     }) |> render_inline()
+    actual == expected
+}
+
+expect {
+    expected = "<ul><li>first</li></ul>"
+    actual = UnorderedList({ items: [Inlines([Text("first")])] }) |> render_block()
+    actual == expected
+}
+expect {
+    expected = "<ul id=\"1234\"><li>first</li></ul>"
+    actual = UnorderedList({
+        attrs: { id: "1234" },
+        items: [Inlines([Text("first")])],
+    }) |> render_block()
+    actual == expected
+}
+expect {
+    expected = "<ul><li>first</li><li>second</li><li>third</li></ul>"
+    actual = UnorderedList({ items: [
+        Inlines([Text("first")]),
+        Inlines([Text("second")]),
+        Inlines([Text("third")]),
+    ] }) |> render_block()
+    actual == expected
+}
+
+expect {
+    expected = "<ol><li>first</li></ol>"
+    actual = OrderedList({ items: [Inlines([Text("first")])] }) |> render_block()
+    actual == expected
+}
+expect {
+    expected = "<ol id=\"1234\"><li>first</li></ol>"
+    actual = OrderedList({
+        attrs: { id: "1234" },
+        items: [Inlines([Text("first")])],
+    }) |> render_block()
+    actual == expected
+}
+expect {
+    expected = "<ol><li>first</li><li>second</li><li>third</li></ol>"
+    actual = OrderedList({ items: [
+        Inlines([Text("first")]),
+        Inlines([Text("second")]),
+        Inlines([Text("third")]),
+    ] }) |> render_block()
     actual == expected
 }
