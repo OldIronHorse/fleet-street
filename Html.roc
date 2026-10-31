@@ -116,23 +116,20 @@ Html := {}.{
 
         from_str : Str -> Try(Host, [InvalidHost])
         from_str = |host|
-            if host.ends_with("-")
-                Err(InvalidHost)
-            else
-                match host.to_utf8()
-                    .fold_try({total: 0, label: 0, dash: False}, |state, c|
-                        match c {
-                            '.' if state.dash or state.label == 0 => Err(InvalidHost)
-                            '.' => Ok({ total: state.total + 1, label: 0, dash: False })
-                            '-' if state.label == 0 => Err(InvalidHost)
-                            _ if whitelist.contains(c) and state.label < 63 and state.total < 253 =>
-                                Ok({ total: state.total + 1, label: state.label + 1, dash: c == '-' })
-                            _ => Err(InvalidHost)
-                        }) {
-                    Ok(state) if state.total == 0 => Err(InvalidHost)
-                    Ok(_) => Ok({ name: host })
-                    _ => Err(InvalidHost)
-                }
+            match host.to_utf8()
+                .fold_try({total: 0, label: 0, dash: False}, |state, c|
+                    match c {
+                        '.' if state.dash or state.label == 0 => Err(InvalidHost)
+                        '.' => Ok({ total: state.total + 1, label: 0, dash: False })
+                        '-' if state.label == 0 => Err(InvalidHost)
+                        _ if whitelist.contains(c) and state.label < 63 and state.total < 253 =>
+                            Ok({ total: state.total + 1, label: state.label + 1, dash: c == '-' })
+                        _ => Err(InvalidHost)
+                    }) {
+                Ok(state) if state.total > 0 and state.label > 0  and state.dash.not() =>
+                    Ok({ name: host.with_ascii_lowercased() })
+                _ => Err(InvalidHost)
+            }
 
         to_str : Host -> Str
         to_str = |host| host.name
@@ -144,8 +141,8 @@ Html := {}.{
 
     HttpSpec := {
         host: Host,
-        port: Try(U64, [None]) ?? Err(None),
-        path: List(Str),
+        port: Try(U16, [None]) ?? Err(None),
+        path: List(Str) ?? [],
         scheme: Scheme ?? Https,
         query: List(QueryParam) ?? [],
         fragment: Try(Str, [None]) ?? Err(None),
@@ -251,6 +248,8 @@ expect "0F" == as_hex(15)
 expect "10" == as_hex(16)
 expect "FF" == as_hex(255)
 
+expect "%0A" == url_encode("\n")
+
 expect "a &gt; b &amp; c &lt; d &quot;" == Text("a > b & c < d \"") |> render_inline()
 
 expect "<h1>Shopping List</h1>"
@@ -329,6 +328,10 @@ expect "http://example.com/one/two/three/four.html"
     == Http({ scheme: Http, host: Host.from_str("example.com")?, path: ["one", "two", "three", "four.html"] })
         |> Url.to_str()
 
+expect "https://example.com/"
+    == Http({ host: Host.from_str("example.com")? })
+        |> Url.to_str()
+
 expect "https://example.com/one/two/three/four.html"
     == Http({ host: Host.from_str("example.com")?, path: ["one", "two", "three", "four.html"] })
         |> Url.to_str()
@@ -384,6 +387,11 @@ expect "<a href=\"../one%20more/two.html\">The Link</a>"
         url: Relative(["..", "one more", "two.html"]),
         label: [Text("The Link")],
     }) |> render_inline()
+expect "<a href=\"/about.html\">About</a>"
+    ==Link({
+        url: Relative(["", "about.html"]),
+        label: [Text("About")],
+    }) |> render_inline()
 expect {
     expected = "<a href=\"javascript%3Aalert%281%29\">The Link</a>"
     actual = Link({
@@ -393,12 +401,51 @@ expect {
     actual == expected
 }
 
+expect "sub.example.co.uk" == Host.from_str("sub.example.co.uk")?.to_str()
+expect "xn--mnchen-3ya.de" == Host.from_str("xn--mnchen-3ya.de")?.to_str()
 expect "example.com" == Host.from_str("example.com")?.to_str()
+expect "example.com" == Host.from_str("Example.Com")?.to_str()
 expect "a--b" == Host.from_str("a--b")?.to_str()
+expect "123.123.123.123" == Host.from_str("123.123.123.123")?.to_str()
+expect {
+    host = "x".repeat(63)
+        |> List.repeat(3)
+        .append("x".repeat(61))
+        |> Str.join_with(".")
+    host == Host.from_str(host)?.to_str()
+}
+expect {
+    host = "x".repeat(63)
+        |> List.repeat(3)
+        .append("x".repeat(62))
+        |> Str.join_with(".")
+    Err(InvalidHost) == Host.from_str(host)
+}
+expect {
+    host = "sub.${"x".repeat(63)}"
+    host == Host.from_str(host)?.to_str()
+}
+expect {
+    host = "sub.${"x".repeat(64)}"
+    Err(InvalidHost) == Host.from_str(host)
+}
+expect {
+    host = "sub.${"x".repeat(63)}.com"
+    host == Host.from_str(host)?.to_str()
+}
+expect {
+    host = "sub.${"x".repeat(64)}.com"
+    Err(InvalidHost) == Host.from_str(host)
+}
 expect Err(InvalidHost) == Host.from_str("")
 expect Err(InvalidHost) == Host.from_str("a..b")
 expect Err(InvalidHost) == Host.from_str(".com")
 expect Err(InvalidHost) == Host.from_str("example.com-")
+expect Err(InvalidHost) == Host.from_str("example.com.")
 expect Err(InvalidHost) == Host.from_str("example-.com")
 expect Err(InvalidHost) == Host.from_str("example.-com")
 expect Err(InvalidHost) == Host.from_str("exa\"mple.com")
+expect Err(InvalidHost) == Host.from_str("exa mple.com")
+expect Err(InvalidHost) == Host.from_str("exa/mple.com")
+expect Err(InvalidHost) == Host.from_str("exa:mple.com")
+expect Err(InvalidHost) == Host.from_str("exaémple.com")
