@@ -115,19 +115,17 @@ Html := {}.{
             |> Set.from_list()
 
         from_str : Str -> Try(Host, [InvalidHost])
-        from_str = |s| {
-            if s.count_utf8_bytes().is_lte(253)
-                and (s.split_on(".")
-                    .all(|label|
-                        label.starts_with("-").not()
-                            and (label.ends_with("-").not())
-                            and (label.is_empty().not())
-                            and (label.count_utf8_bytes() <= 63)
-                            and (label.to_utf8().all(|c| whitelist.contains(c)))))
-                Ok({ name: s })
-            else
-                Err(InvalidHost)
-        }
+        from_str = |host|
+            host.to_utf8()
+                .fold_try({total: 0, label: 0, dash: False}, |state, c|
+                    match c {
+                        '.' if state.dash => Err(InvalidHost)
+                        '.' => Ok({ total: state.total + 1, label: 0, dash: False })
+                        '-' if state.label == 0 or state.dash => Err(InvalidHost)
+                        _ if whitelist.contains(c) and state.label <= 63 and state.total <= 253 =>
+                            Ok({ total: state.total + 1, label: state.label + 1, dash: c == '-' })
+                        _ => Err(InvalidHost)
+                    }).map_ok(|_| { name: host })
 
         to_str : Host -> Str
         to_str = |host| host.name
