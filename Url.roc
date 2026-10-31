@@ -1,20 +1,14 @@
 Url := [
     Http(HttpSpec),
     MailTo(MailToSpec),
-    Relative(List(Str)),
+    Relative(RelativeSpec),
 ].{
     to_str : Url -> Str
     to_str = |url|
         match url {
             Http(hs) => {
                 port = hs.port.map_ok(|p| ":${p.to_str()}").ok_or("")
-                query =
-                    if hs.query.is_empty()
-                        "" 
-                    else
-                        Str.join_with(hs.query.map(|p| p.url_encode()), "&").with_prefix("?")
-                fragment = hs.fragment.map_ok(|f| "#${url_encode(f)}").ok_or("")
-                "${hs.scheme.to_str()}://${hs.host.to_str()}${port}/${hs.path.map(url_encode) |> Str.join_with("/")}${query}${fragment}"
+                "${hs.scheme.to_str()}://${hs.host.to_str()}${port}/${path(hs.path)}${query(hs.query)}${fragment(hs.fragment)}"
             }
             MailTo(mt) => {
                 subject = if mt.subject.is_empty() [] else ["subject=${url_encode(mt.subject)}"]
@@ -26,8 +20,10 @@ Url := [
                     |> Str.join_with("&")
                 "mailto:${mt.to.url_encode()}${if args.is_empty() "" else args.with_prefix("?")}"
             }
-            Relative(path) =>
-                path.map(url_encode) |> Str.join_with("/")
+            Relative(rs) => {
+                root = if rs.root "/" else ""
+                "${root}${path(rs.path)}${query(rs.query)}${fragment(rs.fragment)}"
+            }
         }
 
     Host :: { name: Str }.{
@@ -84,12 +80,13 @@ Url := [
             "${url_encode(qp.key)}=${url_encode(qp.value)}"
     }
 
-    Address := { recipient: Str, domain: Str }.{
+    Address := { recipient: Str, domain: Host }.{
         url_encode : Address -> Str
         url_encode = |addr|
-            "${url_encode(addr.recipient)}@${url_encode(addr.domain)}"
+            "${url_encode(addr.recipient)}@${url_encode(addr.domain.to_str())}"
 
     }
+
     MailToSpec := {
         to: Address,
         subject: Str ?? "",
@@ -97,7 +94,37 @@ Url := [
         cc: List(Address) ?? [],
         bcc: List(Address)?? [],
     }
+
+    RelativeSpec := {
+        root: Bool ?? False,
+        path: List(Str) ?? [],
+        fragment: Try(Str, [None]) ?? Err(None),
+        query: List(QueryParam) ?? [],
+    }
 }
+
+path = |ps|
+    ps |> drop_while(Str.is_empty)
+    .map(url_encode)
+    |> Str.join_with("/")
+
+query = |qs|
+    if qs.is_empty()
+        ""
+    else
+        qs.map(|p| p.url_encode())
+            |> Str.join_with("&")
+            .with_prefix("?")
+
+fragment = |fg|
+    fg.map_ok(|f| "#${url_encode(f)}").ok_or("")
+
+drop_while : List(a), (a -> Bool) -> List(a)
+drop_while = |l, f|
+    match l {
+        [h, .. as rest] if f(h) => rest |> drop_while(f)
+        _ => l
+    }
 
 url_whitelist = "-._~abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
     .to_utf8()
@@ -151,11 +178,39 @@ expect "https://example.com:8000/one/two/three/four.html"
         path: ["one", "two", "three", "four.html"]
     }) |> Url.to_str()
 
+expect "https://example.com:0/one/two/three/four.html"
+    == Http({
+        host: Host.from_str("example.com")?,
+        port: Ok(0),
+        path: ["one", "two", "three", "four.html"]
+    }) |> Url.to_str()
+
+expect "https://example.com:65535/one/two/three/four.html"
+    == Http({
+        host: Host.from_str("example.com")?,
+        port: Ok(65535),
+        path: ["one", "two", "three", "four.html"]
+    }) |> Url.to_str()
+
 expect "https://example.com/one/two/three/four.html?name=Joe%20Bl%26ggs&age=4%235"
     == Http({
         host: Host.from_str("example.com")?,
         path: ["one", "two", "three", "four.html"],
         query: [{ key: "name", value: "Joe Bl&ggs" }, { key: "age", value: "4#5" }],
+    }) |> Url.to_str()
+
+expect "https://example.com/one/two/three/four.html"
+    == Http({
+        host: Host.from_str("example.com")?,
+        path: ["one", "two", "three", "four.html"],
+        query: [],
+    }) |> Url.to_str()
+
+expect "https://example.com/one/two/three/"
+    == Http({
+        host: Host.from_str("example.com")?,
+        path: ["one", "two", "three", ""],
+        query: [],
     }) |> Url.to_str()
 
 expect "sub.example.co.uk" == Host.from_str("sub.example.co.uk")?.to_str()
@@ -195,6 +250,7 @@ expect {
     Err(InvalidHost) == Host.from_str(host)
 }
 expect Err(InvalidHost) == Host.from_str("")
+expect Err(InvalidHost) == Host.from_str("-")
 expect Err(InvalidHost) == Host.from_str("a..b")
 expect Err(InvalidHost) == Host.from_str(".com")
 expect Err(InvalidHost) == Host.from_str("example.com-")
@@ -208,3 +264,13 @@ expect Err(InvalidHost) == Host.from_str("exa:mple.com")
 expect Err(InvalidHost) == Host.from_str("exaémple.com")
 
 expect "%0A" == url_encode("\n")
+
+expect "about.html" == Relative({ path: ["", "", "about.html"] }) |> Url.to_str()
+expect "about/" == Relative({ path: ["", "", "about", ""] }) |> Url.to_str()
+expect "#intro" == Relative({ fragment: Ok("intro") }) |> Url.to_str()
+expect {
+    expected = "/about.html"
+    actual = Relative({ root: True, path: ["about.html"] }) |> Url.to_str()
+    actual == expected
+}
+

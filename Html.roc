@@ -231,16 +231,16 @@ expect {
     expected ="<a href=\"mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link&amp;body=Please%20provide%20feedback.&amp;cc=cc1@elsewhere.com&amp;cc=cc2@example.com&amp;bcc=bc1@elsewhere.com&amp;bcc=bc2@example.com\">Send Feedback</a>"
     actual = Link({
         url: MailTo({
-            to: { recipient: "someone", domain: "example.com" },
+            to: { recipient: "someone", domain: Url.Host.from_str("example.com")? },
             subject: "Feedback Request & Link",
             body: "Please provide feedback.",
             cc: [
-                { recipient: "cc1", domain: "elsewhere.com"},
-                { recipient: "cc2", domain: "example.com" },
+                { recipient: "cc1", domain: Url.Host.from_str("elsewhere.com")? },
+                { recipient: "cc2", domain: Url.Host.from_str("example.com")? },
             ],
             bcc: [
-                { recipient: "bc1", domain: "elsewhere.com"},
-                { recipient: "bc2", domain: "example.com" },
+                { recipient: "bc1", domain: Url.Host.from_str("elsewhere.com")? },
+                { recipient: "bc2", domain: Url.Host.from_str("example.com")? },
             ],
         }),
         label: [Text("Send Feedback")],
@@ -249,26 +249,36 @@ expect {
 }
 expect "<a href=\"../one%20more/two.html\">The Link</a>"
     == Link({
-        url: Relative(["..", "one more", "two.html"]),
+        url: Relative({ path: ["..", "one more", "two.html"] }),
         label: [Text("The Link")],
     }) |> render_inline()
 expect "<a href=\"/about.html\">About</a>"
     == Link({
-        url: Relative(["", "about.html"]),
+        url: Relative({ root: True, path: ["about.html"] }),
         label: [Text("About")],
     }) |> render_inline()
 expect {
     expected = "<a href=\"javascript%3Aalert%281%29\">The Link</a>"
     actual = Link({
-        url: Relative(["javascript:alert(1)"]),
+        url: Relative({ path: ["javascript:alert(1)"] }),
         label: [Text("The Link")],
     }) |> render_inline()
     actual == expected
 }
 
 expect {
+    expected = "<ul></ul>"
+    actual = UnorderedList({ items: [] }) |> render_block()
+    actual == expected
+}
+expect {
     expected = "<ul><li>first</li></ul>"
     actual = UnorderedList({ items: [Inlines([Text("first")])] }) |> render_block()
+    actual == expected
+}
+expect {
+    expected = "<ul><li>first&lt;second</li></ul>"
+    actual = UnorderedList({ items: [Inlines([Text("first<second")])] }) |> render_block()
     actual == expected
 }
 expect {
@@ -290,8 +300,25 @@ expect {
 }
 
 expect {
+    expected = "<ol></ol>"
+    actual = OrderedList({ items: [] }) |> render_block()
+    actual == expected
+}
+expect {
     expected = "<ol><li>first</li></ol>"
     actual = OrderedList({ items: [Inlines([Text("first")])] }) |> render_block()
+    actual == expected
+}
+expect {
+    expected = "<ol><li>first&lt;second</li></ol>"
+    actual = OrderedList({ items: [Inlines([Text("first<second")])] }) |> render_block()
+    actual == expected
+}
+expect {
+    expected = "<ol><li><p>first</p></li></ol>"
+    actual = OrderedList({
+        items: [Blocks([Paragraph({ children: [Text("first")] })])]
+    }) |> render_block()
     actual == expected
 }
 expect {
@@ -303,10 +330,10 @@ expect {
     actual == expected
 }
 expect {
-    expected = "<ol><li>first</li><li>second</li><li>third</li></ol>"
+    expected = "<ol><li>first</li><li><ul><li>second 1</li><li>second 2</li></ul></li><li>third</li></ol>"
     actual = OrderedList({ items: [
         Inlines([Text("first")]),
-        Inlines([Text("second")]),
+        Blocks([UnorderedList({ items: [Inlines([Text("second 1")]), Inlines([Text("second 2")])] })]),
         Inlines([Text("third")]),
     ] }) |> render_block()
     actual == expected
