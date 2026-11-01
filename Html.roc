@@ -76,7 +76,7 @@ Html := {}.{
         new : TableConfig -> Try(TableSpec, [RaggedRows])
         new = |tc| {
             header_count = tc.headers.len()
-            if tc.data.any(|row| row.len() > header_count)
+            if header_count > 0 and tc.data.any(|row| row.len() > header_count)
                 Err(RaggedRows)
             else
                 Ok({ attrs: tc.attrs, caption: tc.caption, headers: tc.headers, data: tc.data })
@@ -203,7 +203,8 @@ render_block = |b|
             caption = if ts.caption.is_empty() "" else "<caption>${escape(ts.caption)}</caption>"
             hs = ts.headers.map(|h| "<th>${render_content(h)}</th>")
             rows = ts.data.map(render_table_row)
-            "<table${render_attrs(ts.attrs)}>${caption}${if hs.is_empty() "" else "<thead><tr>".concat(hs |> Str.join_with("")).concat("</tr></thead>")}<tbody>${rows |> Str.join_with("")}</tbody></table>"
+            body = if rows.is_empty() "" else "<tbody>${rows |> Str.join_with("")}</tbody>"
+            "<table${render_attrs(ts.attrs)}>${caption}${if hs.is_empty() "" else "<thead><tr>".concat(hs |> Str.join_with("")).concat("</tr></thead>")}${body}</table>"
         }
     }
 
@@ -461,6 +462,27 @@ expect {
     actual == expected
 }
 expect {
+    expected = "<table><tbody><tr><td>1</td><td>2</td></tr><tr><td>3</td><td>4</td></tr></tbody></table>"
+    table_spec = TableSpec.new({
+        data: [
+            [Inlines([Text("1")]), Inlines([Text("2")])],
+            [Inlines([Text("3")]), Inlines([Text("4")])],
+        ],
+    })?
+    actual = Table(table_spec) |> render_block()
+    actual == expected
+}
+expect {
+    expected = "<table><caption>a caption</caption><thead><tr><th>one</th><th>two</th></tr></thead></table>"
+    table_spec = TableSpec.new({
+        caption: "a caption",
+        headers: [Inlines([Text("one")]), Inlines([Text("two")])],
+        data: []
+    })?
+    actual = Table(table_spec) |> render_block()
+    actual == expected
+}
+expect {
     expected = "<table><caption>a caption</caption><thead><tr><th>one</th><th>two</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr><tr><td>3</td><td>4</td></tr></tbody></table>"
     table_spec = TableSpec.new({
         caption: "a caption",
@@ -474,12 +496,12 @@ expect {
     actual == expected
 }
 expect {
-    expected = "<table id=\"1234\" class=\"here there\"><thead><tr><th>one</th><th>two</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr><tr><td>3</td><td>4</td></tr></tbody></table>"
+    expected = "<table id=\"1234\" class=\"here there\"><thead><tr><th>one&lt;</th><th>two</th></tr></thead><tbody><tr><td>1&gt;5</td><td>2</td></tr><tr><td>3</td><td>4</td></tr></tbody></table>"
     table_spec = TableSpec.new({
         attrs: { id: "1234", classes: ["here", "there"] },
-        headers: [Inlines([Text("one")]), Inlines([Text("two")])],
+        headers: [Inlines([Text("one<")]), Inlines([Text("two")])],
         data: [
-            [Inlines([Text("1")]), Inlines([Text("2")])],
+            [Inlines([Text("1>5")]), Inlines([Text("2")])],
             [Inlines([Text("3")]), Inlines([Text("4")])],
         ],
     })?
