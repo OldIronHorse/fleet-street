@@ -60,10 +60,27 @@ Html := {}.{
         Table(TableSpec),
     ]
 
-    TableSpec := {
+    TableConfig := {
         attrs: Attrs ?? {},
+        caption: Str ?? "",
         headers: List(Content) ?? [],
         data: List(List(Content)),
+    }
+
+    TableSpec :: {
+        attrs: Attrs,
+        caption: Str,
+        headers: List(Content),
+        data: List(List(Content)),
+    }.{
+        new : TableConfig -> Try(TableSpec, [RaggedRows])
+        new = |tc| {
+            header_count = tc.headers.len()
+            if tc.data.any(|row| row.len() > header_count)
+                Err(RaggedRows)
+            else
+                Ok({ attrs: tc.attrs, caption: tc.caption, headers: tc.headers, data: tc.data })
+        }
     }
 
     DivSpec := {
@@ -183,9 +200,10 @@ render_block = |b|
         Div(ds) =>
             "<div${render_attrs(ds.attrs)}>${ds.children.map(render_block) |> Str.join_with("")}</div>"
         Table(ts) => {
+            caption = if ts.caption.is_empty() "" else "<caption>${escape(ts.caption)}</caption>"
             hs = ts.headers.map(|h| "<th>${render_content(h)}</th>")
             rows = ts.data.map(render_table_row)
-            "<table${render_attrs(ts.attrs)}>${if hs.is_empty() "" else "<tr>".concat(hs |> Str.join_with("")).concat("</tr>")}${rows |> Str.join_with("")}</table>"
+            "<table${render_attrs(ts.attrs)}>${caption}${if hs.is_empty() "" else "<thead><tr>".concat(hs |> Str.join_with("")).concat("</tr></thead>")}<tbody>${rows |> Str.join_with("")}</tbody></table>"
         }
     }
 
@@ -443,27 +461,28 @@ expect {
     actual == expected
 }
 expect {
-    expected = "<table><tr><th>one</th><th>two</th></tr><tr><td>1</td><td>2</td></tr><tr><td>3</td><td>4</td></tr></table>"
-    actual = Table({
+    expected = "<table><caption>a caption</caption><thead><tr><th>one</th><th>two</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr><tr><td>3</td><td>4</td></tr></tbody></table>"
+    table_spec = TableSpec.new({
+        caption: "a caption",
         headers: [Inlines([Text("one")]), Inlines([Text("two")])],
         data: [
             [Inlines([Text("1")]), Inlines([Text("2")])],
             [Inlines([Text("3")]), Inlines([Text("4")])],
         ],
-    }) |> render_block()
+    })?
+    actual = Table(table_spec) |> render_block()
     actual == expected
 }
 expect {
-    expected = "<table id=\"1234\" class=\"here there\"><tr><th>one</th><th>two</th></tr><tr><td>1</td><td>2</td></tr><tr><td>3</td><td>4</td></tr></table>"
-    table_spec : TableSpec
-    table_spec = {
+    expected = "<table id=\"1234\" class=\"here there\"><thead><tr><th>one</th><th>two</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr><tr><td>3</td><td>4</td></tr></tbody></table>"
+    table_spec = TableSpec.new({
         attrs: { id: "1234", classes: ["here", "there"] },
         headers: [Inlines([Text("one")]), Inlines([Text("two")])],
         data: [
             [Inlines([Text("1")]), Inlines([Text("2")])],
             [Inlines([Text("3")]), Inlines([Text("4")])],
         ],
-    }
+    })?
     table = Table(table_spec)
     actual = table |> render_block()
     actual == expected
