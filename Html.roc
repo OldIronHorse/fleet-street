@@ -57,7 +57,14 @@ Html := {}.{
         UnorderedList(ListSpec),
         OrderedList(ListSpec),
         Div(DivSpec),
+        Table(TableSpec),
     ]
+
+    TableSpec := {
+        attrs: Attrs ?? {},
+        headers: List(Inline) ?? [],
+        data: List(List(Inline)),
+    }
 
     DivSpec := {
         attrs: Attrs ?? {},
@@ -177,7 +184,16 @@ render_block = |b|
             "<ol${render_attrs(ls.attrs)}>${render_list_items(ls.items)}</ol>"
         Div(ds) =>
             "<div${render_attrs(ds.attrs)}>${ds.children.map(render_block) |> Str.join_with("")}</div>"
+        Table(ts) => {
+            hs = ts.headers.map(|h| "<th>${render_inline(h)}</th>")
+            rows = ts.data.map(render_table_row)
+            "<table>${if hs.is_empty() "" else "<tr>".concat(hs |> Str.join_with("")).concat("</tr>")}${rows |> Str.join_with("")}</table>"
+        }
     }
+
+render_table_row : List(Inline) -> Str
+render_table_row = |cells|
+    "<tr>${cells.map(|c| "<td>".concat(render_inline(c)).concat("</td>")) |> Str.join_with("")}</tr>"
 
 render_attrs : Attrs -> Str
 render_attrs = |attrs| {
@@ -416,6 +432,17 @@ expect {
     actual = Div({
         children: [Heading({ level: H1, children: [Text("some text")] })],
         attrs: { id: "1234", classes: ["one", "two"] },
+    }) |> render_block()
+    actual == expected
+}
+expect {
+    expected = "<table><tr><th>one</th><th>two</th></tr><tr><td>1</td><td>2</td></tr><tr><td>3</td><td>4</td></tr></table>"
+    actual = Table({
+        headers: [Text("one"), Text("two")],
+        data: [
+            [Text("1"), Text("2")],
+            [Text("3"), Text("4")],
+        ],
     }) |> render_block()
     actual == expected
 }
