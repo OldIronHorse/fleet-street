@@ -75,20 +75,8 @@ Html := {}.{
         attrs:  Attrs ?? {},
         url: Url,
         alt: Str,
-        height: Length ?? None,
-        width: Length ?? None,
-    }
-
-    Length := [
-        None,
-        Px(U64),
-    ].{
-        to_style : Length, Str -> Str
-        to_style = |l, tag|
-            match l {
-                None => ""
-                Px(n) => "${tag}:${n.to_str()}px;"
-            }
+        height: U64 ?? 0,
+        width: U64 ?? 0,
     }
 
     ListSpec := {
@@ -143,10 +131,9 @@ render_inline = |c|
         Link({ url, label }) =>
             "<a href=\"${escape(url.to_str())}\">${label.map(|l| l.to_inline()) |> render_inlines()}</a>"
         Image(s) => {
-            style = "${s.width.to_style("width")}${s.height.to_style("height")}"
-            "<img src=\"${escape(s.url.to_str())}\" alt=\"${escape(s.alt)}\""
-                .concat(if style.is_empty() "" else " style=\"${style}\"")
-                .concat(">")
+            width = if s.width == 0 "" else " width=\"${s.width.to_str()}\""
+            height = if s.height == 0 "" else " height=\"${s.height.to_str()}\""
+            "<img${render_attrs(s.attrs)} src=\"${escape(s.url.to_str())}\" alt=\"${escape(s.alt)}\"${width}${height}>"
         }
     }
 
@@ -187,7 +174,7 @@ render_block = |b|
         Table(ts) => {
             hs = ts.headers.map(|h| "<th>${render_inline(h)}</th>")
             rows = ts.data.map(render_table_row)
-            "<table>${if hs.is_empty() "" else "<tr>".concat(hs |> Str.join_with("")).concat("</tr>")}${rows |> Str.join_with("")}</table>"
+            "<table${render_attrs(ts.attrs)}>${if hs.is_empty() "" else "<tr>".concat(hs |> Str.join_with("")).concat("</tr>")}${rows |> Str.join_with("")}</table>"
         }
     }
 
@@ -410,12 +397,21 @@ expect {
     actual == expected
 }
 expect {
-    expected = "<img src=\"images/trees.jpg\" alt=\"Some trees &amp; bushes\" style=\"width:128px;height:256px;\">"
+    expected = "<img id=\"1234\" class=\"here there\" src=\"images/trees.jpg\" alt=\"Some trees &amp; bushes\">"
+    actual = Image({
+        attrs: { id: "1234", classes: ["here", "there"] },
+        url: Relative({ path: ["images", "trees.jpg"] }),
+        alt: "Some trees & bushes",
+    }) |> render_inline()
+    actual == expected
+}
+expect {
+    expected = "<img src=\"images/trees.jpg\" alt=\"Some trees &amp; bushes\" width=\"128\" height=\"256\">"
     actual = Image({
         url: Relative({ path: ["images", "trees.jpg"] }),
         alt: "Some trees & bushes",
-        width: Px(128),
-        height: Px(256),
+        width: 128,
+        height: 256,
     }) |> render_inline()
     actual == expected
 }
@@ -438,6 +434,18 @@ expect {
 expect {
     expected = "<table><tr><th>one</th><th>two</th></tr><tr><td>1</td><td>2</td></tr><tr><td>3</td><td>4</td></tr></table>"
     actual = Table({
+        headers: [Text("one"), Text("two")],
+        data: [
+            [Text("1"), Text("2")],
+            [Text("3"), Text("4")],
+        ],
+    }) |> render_block()
+    actual == expected
+}
+expect {
+    expected = "<table id=\"1234\" class=\"here there\"><tr><th>one</th><th>two</th></tr><tr><td>1</td><td>2</td></tr><tr><td>3</td><td>4</td></tr></table>"
+    actual = Table({
+        attrs: { id: "1234", classes: ["here", "there"] },
         headers: [Text("one"), Text("two")],
         data: [
             [Text("1"), Text("2")],
