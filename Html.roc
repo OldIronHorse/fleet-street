@@ -62,8 +62,8 @@ Html := {}.{
 
     TableSpec := {
         attrs: Attrs ?? {},
-        headers: List(Inline) ?? [],
-        data: List(List(Inline)),
+        headers: List(Content) ?? [],
+        data: List(List(Content)),
     }
 
     DivSpec := {
@@ -81,10 +81,10 @@ Html := {}.{
 
     ListSpec := {
         attrs: Attrs ?? {},
-        items: List(ListItem),
+        items: List(Content),
     }
 
-    ListItem := [
+    Content := [
         Inlines(List(Inline)),
         Blocks(List(Block)),
     ]
@@ -142,14 +142,25 @@ render_inlines = |content|
     content.map(render_inline)
         |> Str.join_with("")
 
-render_list_items : List(ListItem) -> Str
-render_list_items = |items|
-    items.map(|i|
-        match i {
-            Inlines(ils) => "<li>${render_inlines(ils)}</li>"
-            Blocks(bs) => "<li>${bs.map(render_block) |> Str.join_with("")}</li>"
-        })
+render_contents : List(Content) -> Str
+render_contents = |items|
+    items.map(render_content)
         |> Str.join_with("")
+
+render_list_contents : List(Content) -> Str
+render_list_contents = |items|
+    items.map(render_list_content)
+        |> Str.join_with("")
+
+render_list_content : Content -> Str
+render_list_content = |items| "<li>${render_content(items)}</li>"
+
+render_content : Content -> Str
+render_content = |items|
+    match items {
+        Inlines(ils) => render_inlines(ils)
+        Blocks(bs) => bs.map(render_block) |> Str.join_with("")
+    }
 
 escape : Str -> Str
 escape = |s|
@@ -166,21 +177,21 @@ render_block = |b|
         Paragraph(ps) =>
             "<p${render_attrs(ps.attrs)}>${render_inlines(ps.children)}</p>"
         UnorderedList(ls) =>
-            "<ul${render_attrs(ls.attrs)}>${render_list_items(ls.items)}</ul>"
+            "<ul${render_attrs(ls.attrs)}>${render_list_contents(ls.items)}</ul>"
         OrderedList(ls) =>
-            "<ol${render_attrs(ls.attrs)}>${render_list_items(ls.items)}</ol>"
+            "<ol${render_attrs(ls.attrs)}>${render_list_contents(ls.items)}</ol>"
         Div(ds) =>
             "<div${render_attrs(ds.attrs)}>${ds.children.map(render_block) |> Str.join_with("")}</div>"
         Table(ts) => {
-            hs = ts.headers.map(|h| "<th>${render_inline(h)}</th>")
+            hs = ts.headers.map(|h| "<th>${render_content(h)}</th>")
             rows = ts.data.map(render_table_row)
             "<table${render_attrs(ts.attrs)}>${if hs.is_empty() "" else "<tr>".concat(hs |> Str.join_with("")).concat("</tr>")}${rows |> Str.join_with("")}</table>"
         }
     }
 
-render_table_row : List(Inline) -> Str
+render_table_row : List(Content) -> Str
 render_table_row = |cells|
-    "<tr>${cells.map(|c| "<td>".concat(render_inline(c)).concat("</td>")) |> Str.join_with("")}</tr>"
+    "<tr>${cells.map(|c| "<td>".concat(render_content(c)).concat("</td>")) |> Str.join_with("")}</tr>"
 
 render_attrs : Attrs -> Str
 render_attrs = |attrs| {
@@ -434,23 +445,26 @@ expect {
 expect {
     expected = "<table><tr><th>one</th><th>two</th></tr><tr><td>1</td><td>2</td></tr><tr><td>3</td><td>4</td></tr></table>"
     actual = Table({
-        headers: [Text("one"), Text("two")],
+        headers: [Inlines([Text("one")]), Inlines([Text("two")])],
         data: [
-            [Text("1"), Text("2")],
-            [Text("3"), Text("4")],
+            [Inlines([Text("1")]), Inlines([Text("2")])],
+            [Inlines([Text("3")]), Inlines([Text("4")])],
         ],
     }) |> render_block()
     actual == expected
 }
 expect {
     expected = "<table id=\"1234\" class=\"here there\"><tr><th>one</th><th>two</th></tr><tr><td>1</td><td>2</td></tr><tr><td>3</td><td>4</td></tr></table>"
-    actual = Table({
+    table_spec : TableSpec
+    table_spec = {
         attrs: { id: "1234", classes: ["here", "there"] },
-        headers: [Text("one"), Text("two")],
+        headers: [Inlines([Text("one")]), Inlines([Text("two")])],
         data: [
-            [Text("1"), Text("2")],
-            [Text("3"), Text("4")],
+            [Inlines([Text("1")]), Inlines([Text("2")])],
+            [Inlines([Text("3")]), Inlines([Text("4")])],
         ],
-    }) |> render_block()
+    }
+    table = Table(table_spec)
+    actual = table |> render_block()
     actual == expected
 }
