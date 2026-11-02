@@ -11,6 +11,7 @@ app [main!] {
 import cli.Stdout
 import parser.Markdown
 import Html
+import MdToHtml
 
 source =
     \\# Shopping
