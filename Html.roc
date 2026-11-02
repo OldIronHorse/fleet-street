@@ -252,18 +252,13 @@ render_inlines = |content|
     content.map(render_inline)
         |> Str.join_with("")
 
-render_contents : List(Content) -> Str
-render_contents = |items|
-    items.map(render_content)
-        |> Str.join_with("")
-
 render_list_contents : List(Content) -> Str
 render_list_contents = |items|
     items.map(render_list_content)
         |> Str.join_with("")
 
 render_list_content : Content -> Str
-render_list_content = |items| "<li>${render_content(items)}</li>"
+render_list_content = |item| "<li>${render_content(item)}</li>"
 
 render_content : Content -> Str
 render_content = |items|
@@ -294,7 +289,7 @@ render_block = |b|
             "<div${render_attrs(ds.attrs)}>${ds.children.map(render_block) |> Str.join_with("")}</div>"
         Table(ts) => {
             caption = if ts.caption.is_empty() "" else "<caption>${escape(ts.caption)}</caption>"
-            hs = ts.headers.map(|h| "<th>${render_content(h)}</th>")
+            hs = ts.headers.map(|h| "<th scope=\"col\">${render_content(h)}</th>")
             rows = ts.data.map(render_table_row)
             body = if rows.is_empty() "" else "<tbody>${rows |> Str.join_with("")}</tbody>"
             "<table${render_attrs(ts.attrs)}>${caption}${if hs.is_empty() "" else "<thead><tr>".concat(hs |> Str.join_with("")).concat("</tr></thead>")}${body}</table>"
@@ -538,6 +533,24 @@ expect {
     }) |> render_inline()
     actual == expected
 }
+expect {
+    expected = "<img src=\"images/trees.jpg\" alt=\"Some trees &amp; bushes\" height=\"256\">"
+    actual = Image({
+        url: Relative({ path: ["images", "trees.jpg"] }),
+        alt: "Some trees & bushes",
+        height: 256,
+    }) |> render_inline()
+    actual == expected
+}
+expect {
+    expected = "<img src=\"images/trees.jpg\" alt=\"Some trees &amp; bushes\" width=\"128\">"
+    actual = Image({
+        url: Relative({ path: ["images", "trees.jpg"] }),
+        alt: "Some trees & bushes",
+        width: 128,
+    }) |> render_inline()
+    actual == expected
+}
 
 expect "<em>some text</em>" == Emphasis([Text("some text")]) |> render_inline()
 expect {
@@ -566,7 +579,7 @@ expect {
     actual == expected
 }
 expect {
-    expected = "<table><caption>a caption</caption><thead><tr><th>one</th><th>two</th></tr></thead></table>"
+    expected = "<table><caption>a caption</caption><thead><tr><th scope=\"col\">one</th><th scope=\"col\">two</th></tr></thead></table>"
     table_spec = TableSpec.new({
         caption: "a caption",
         headers: [Inlines([Text("one")]), Inlines([Text("two")])],
@@ -576,7 +589,7 @@ expect {
     actual == expected
 }
 expect {
-    expected = "<table><caption>a caption</caption><thead><tr><th>one</th><th>two</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr><tr><td>3</td><td>4</td></tr></tbody></table>"
+    expected = "<table><caption>a caption</caption><thead><tr><th scope=\"col\">one</th><th scope=\"col\">two</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr><tr><td>3</td><td>4</td></tr></tbody></table>"
     table_spec = TableSpec.new({
         caption: "a caption",
         headers: [Inlines([Text("one")]), Inlines([Text("two")])],
@@ -589,7 +602,7 @@ expect {
     actual == expected
 }
 expect {
-    expected = "<table id=\"1234\" class=\"here there\"><thead><tr><th>one&lt;</th><th>two</th></tr></thead><tbody><tr><td>1&gt;5</td><td>2</td></tr><tr><td>3</td><td>4</td></tr></tbody></table>"
+    expected = "<table id=\"1234\" class=\"here there\"><thead><tr><th scope=\"col\">one&lt;</th><th scope=\"col\">two</th></tr></thead><tbody><tr><td>1&gt;5</td><td>2</td></tr><tr><td>3</td><td>4</td></tr></tbody></table>"
     table_spec = TableSpec.new({
         attrs: { id: "1234", classes: ["here", "there"] },
         headers: [Inlines([Text("one<")]), Inlines([Text("two")])],
