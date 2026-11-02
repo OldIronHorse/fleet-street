@@ -482,6 +482,16 @@ expect {
     actual == expected
 }
 expect {
+    expected = "<ol><li><a href=\"https://example.com/one%20mor%C3%A9%3F%23%2F%25/two.html\">first&lt;second</a></li></ol>"
+    actual = OrderedList({
+        items: [Inlines([Link({
+            url: Http({ host: Url.Host.from_str("example.com")?, path: ["one moré?#/%", "two.html"] }),
+            label: [ Text("first<second")],
+        })])]
+    }) |> render_block()
+    actual == expected
+}
+expect {
     expected = "<ol><li><p>first</p></li></ol>"
     actual = OrderedList({
         items: [Blocks([Paragraph({ children: [Text("first")] })])]
@@ -622,4 +632,14 @@ expect Err(RaggedRows) == TableSpec.new({
     ]
 })
 
-expect "<table></table>" == TableSpec.new()? |> Table |> render_block
+expect "<table></table>" == TableSpec.new({ data: [] })? |> Table |> render_block
+expect {
+    expected = "<table><tbody><tr><td><p>some text</p></td></tr></tbody></table>"
+    p = Paragraph(ParagraphSpec.{ children: [Text("some text")] })
+    bs = Blocks([p])
+    ts = TableSpec.new(TableConfig.{ data: [
+        [bs],
+    ] })?
+    actual = Table(ts) |> render_block()
+    actual == expected
+}
