@@ -359,7 +359,7 @@ expect "mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link"
     }) |> Url.to_str()
 
 expect {
-    expected ="mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link&body=Please%20provide%20feedback.&cc=cc1@elsewhere.com&cc=cc2@example.com&bcc=bc1@elsewhere.com&bcc=bc2@example.com"
+    expected ="mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link&body=Please%20provide%20feedback.&cc=cc1@elsewhere.com,cc2@example.com&bcc=bc1@elsewhere.com,bc2@example.com"
     actual = MailTo({
         to: { recipient: "someone", domain: Url.Host.from_str("example.com")? },
         subject: "Feedback Request & Link",
