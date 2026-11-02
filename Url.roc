@@ -268,6 +268,17 @@ expect "https://example.com/one/two/three/"
         query: [],
     }) |> Url.to_str()
 
+expect "https://example.com/#intro"
+    == Http({
+        host: Host.from_str("example.com")?,
+        fragment: Ok("intro")
+    }) |> Url.to_str()
+
+expect Http({ host: Host.from_str("example.com") })
+    != Http({ host: Host.from_str("google.com") })
+expect Http({ host: Host.from_str("example.com") })
+    == Http({ host: Host.from_str("Example.Com") })
+
 expect "sub.example.co.uk" == Host.from_str("sub.example.co.uk")?.to_str()
 expect "xn--mnchen-3ya.de" == Host.from_str("xn--mnchen-3ya.de")?.to_str()
 expect "example.com" == Host.from_str("example.com")?.to_str()
@@ -334,4 +345,33 @@ expect "?name=Joe%20Bl%26ggs&age=4%235"
     == Relative({
         query: [{ key: "name", value: "Joe Bl&ggs" }, { key: "age", value: "4#5" }],
     }) |> Url.to_str()
+expect "/?name=Joe%20Bl%26ggs&age=4%235#intro"
+    == Relative({
+        root: True,
+        fragment: Ok("intro"),
+        query: [{ key: "name", value: "Joe Bl&ggs" }, { key: "age", value: "4#5" }],
+    }) |> Url.to_str()
 
+expect "mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link"
+    == MailTo({
+        to: { recipient: "someone", domain: Url.Host.from_str("example.com")? },
+        subject: "Feedback Request & Link",
+    }) |> Url.to_str()
+
+expect {
+    expected ="mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link&body=Please%20provide%20feedback.&cc=cc1@elsewhere.com&cc=cc2@example.com&bcc=bc1@elsewhere.com&bcc=bc2@example.com"
+    actual = MailTo({
+        to: { recipient: "someone", domain: Url.Host.from_str("example.com")? },
+        subject: "Feedback Request & Link",
+        body: "Please provide feedback.",
+        cc: [
+            { recipient: "cc1", domain: Url.Host.from_str("elsewhere.com")? },
+            { recipient: "cc2", domain: Url.Host.from_str("example.com")? },
+        ],
+        bcc: [
+            { recipient: "bc1", domain: Url.Host.from_str("elsewhere.com")? },
+            { recipient: "bc2", domain: Url.Host.from_str("example.com")? },
+        ],
+    }) |> Url.to_str()
+    actual == expected
+}

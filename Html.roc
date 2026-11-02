@@ -97,6 +97,7 @@ Html := {}.{
         data: List(List(Content)),
     }
 
+    # TableSpec is opaque to enforce the rectangular table check
     TableSpec :: {
         attrs: Attrs,
         caption: Str,
@@ -106,25 +107,19 @@ Html := {}.{
         new : TableConfig -> Try(TableSpec, [RaggedRows])
         new = |tc| {
             rows = if tc.headers.is_empty() tc.data else tc.data.prepend(tc.headers)
-            match rows {
-                [first, .. as rest] =>
-                    if rest.all(|row| row.len() == first.len())
-                        Ok({
-                            attrs: tc.attrs,
-                            caption: tc.caption,
-                            headers: tc.headers,
-                            data: tc.data,
-                        })
-                    else
-                        Err(RaggedRows)
-                [] =>
-                    Ok({
-                        attrs: tc.attrs,
-                        caption: tc.caption,
-                        headers: tc.headers,
-                        data: tc.data,
-                    })
+            rectangular = match rows {
+                [first, .. as rest] => rest.all(|row| row.len() == first.len())
+                [] => True
             }
+            if rectangular
+                Ok({
+                    attrs: tc.attrs,
+                    caption: tc.caption,
+                    headers: tc.headers,
+                    data: tc.data,
+                })
+            else
+                Err(RaggedRows)
         }
 
         is_eq = |this, that|
@@ -633,6 +628,7 @@ expect Err(RaggedRows) == TableSpec.new({
 })
 
 expect "<table></table>" == TableSpec.new({ data: [] })? |> Table |> render_block
+expect "<table></table>" == TableSpec.{ attrs: Attrs.{}, caption: "", headers: [], data: [] } |> Table |> render_block
 expect {
     expected = "<table><tbody><tr><td><p>some text</p></td></tr></tbody></table>"
     p = Paragraph(ParagraphSpec.{ children: [Text("some text")] })
