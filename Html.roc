@@ -33,7 +33,17 @@ Html := {}.{
         Emphasis(List(Inline)),
         Link({ label: List(LinkContent), url: Url }),
         Image(ImageSpec),
-    ]
+    ].{
+        is_eq = |this, that|
+            match (this, that) {
+                (Text(a), Text(b)) => a == b
+                (Strong(a), Strong(b)) => a == b
+                (Emphasis(a), Emphasis(b)) => a == b
+                (Link(a), Link(b)) => a == b
+                (Image(a), Image(b)) => a == b
+                _ => False
+            }
+    }
 
     LinkContent := [
         Text(Str),
@@ -49,6 +59,15 @@ Html := {}.{
                 Emphasis(cs) => Emphasis(cs.map(to_inline))
                 Image(s) => Image(s)
             }
+
+        is_eq = |this, that|
+            match (this, that) {
+                (Text(a), Text(b)) => a == b
+                (Strong(a), Strong(b)) => a == b
+                (Emphasis(a), Emphasis(b)) => a == b
+                (Image(a), Image(b)) => a == b
+                _ => False
+            }
     }
 
     Block := [
@@ -58,10 +77,21 @@ Html := {}.{
         OrderedList(ListSpec),
         Div(DivSpec),
         Table(TableSpec),
-    ]
+    ].{
+        is_eq = |this, that|
+            match (this, that) {
+                (Heading(a), Heading(b)) => a == b
+                (Paragraph(a), Paragraph(b)) => a == b
+                (UnorderedList(a), UnorderedList(b)) => a == b
+                (OrderedList(a), OrderedList(b)) => a == b
+                (Div(a), Div(b)) => a == b
+                (Table(a), Table(b)) => a == b
+                _ => False
+            }
+    }
 
     TableConfig := {
-        attrs: Attrs ?? {},
+        attrs: Attrs ?? Attrs.{},
         caption: Str ?? "",
         headers: List(Content) ?? [],
         data: List(List(Content)),
@@ -75,50 +105,107 @@ Html := {}.{
     }.{
         new : TableConfig -> Try(TableSpec, [RaggedRows])
         new = |tc| {
-            header_count = tc.headers.len()
-            if header_count > 0 and tc.data.any(|row| row.len() > header_count)
-                Err(RaggedRows)
-            else
-                Ok({ attrs: tc.attrs, caption: tc.caption, headers: tc.headers, data: tc.data })
+            rows = if tc.headers.is_empty() tc.data else tc.data.prepend(tc.headers)
+            match rows {
+                [first, .. as rest] =>
+                    if rest.all(|row| row.len() == first.len())
+                        Ok({
+                            attrs: tc.attrs,
+                            caption: tc.caption,
+                            headers: tc.headers,
+                            data: tc.data,
+                        })
+                    else
+                        Err(RaggedRows)
+                [] =>
+                    Ok({
+                        attrs: tc.attrs,
+                        caption: tc.caption,
+                        headers: tc.headers,
+                        data: tc.data,
+                    })
+            }
         }
+
+        is_eq = |this, that|
+            this.attrs == that.attrs
+                and this.caption == that.caption
+                and this.headers == that.headers
+                and this.data == that.data
     }
 
     DivSpec := {
-        attrs: Attrs ?? {},
+        attrs: Attrs ?? Attrs.{},
         children: List(Block),
+    }.{
+        is_eq = |this, that|
+            this.attrs == that.attrs
+                and this.children == that.children
     }
 
     ImageSpec := {
-        attrs:  Attrs ?? {},
+        attrs:  Attrs ?? Attrs.{},
         url: Url,
         alt: Str,
         height: U64 ?? 0,
         width: U64 ?? 0,
+    }.{
+        is_eq = |this, that|
+            this.attrs == that.attrs
+                and this.url == that.url
+                and this.alt == that.alt
+                and this.height == that.height
+                and this.width == that.width
     }
 
     ListSpec := {
-        attrs: Attrs ?? {},
+        attrs: Attrs ?? Attrs.{},
         items: List(Content),
+    }.{
+        is_eq = |this, that|
+            this.attrs == that.attrs
+                and this.items == that.items
     }
 
     Content := [
         Inlines(List(Inline)),
         Blocks(List(Block)),
-    ]
+    ].{
+        is_eq = |this, that|
+            match (this, that) {
+                (Inlines(a), Inlines(b)) => a == b
+                (Blocks(a), Blocks(b)) => a == b
+                _ => False
+            }
+    }
 
     Attrs := {
         id: Str ?? "",
         classes: List(Str) ?? [],
+    }.{
+        is_eq = |this, that|
+            this.id == that.id
+                and this.classes == that.classes
     }
 
     HeadingSpec := {
-        attrs: Attrs ?? {},
+        attrs: Attrs ?? Attrs.{},
         level: Level,
-        children: List(Inline)
+        children: List(Inline),
+    }.{
+        is_eq = |this, that|
+            this.attrs == that.attrs
+                and this.level == that.level
+                and this.children == that.children
     }
+
     ParagraphSpec := {
-        attrs: Attrs ?? {},
+        attrs: Attrs ?? Attrs.{},
         children: List(Inline)
+    }.{
+        is_eq = |this, that|
+            this.attrs == that.attrs
+                and this.children == that.children
     }
 
     Level := [H1, H2, H3, H4, H5, H6].{
@@ -131,6 +218,12 @@ Html := {}.{
                 H4 => "4"
                 H5 => "5"
                 H6 => "6"
+            }
+
+        is_eq = |this, that|
+            match (this, that) {
+                (H1, H1) | (H2, H2) | (H3, H3) | (H4, H4) | (H5, H5) |(H6, H6) => True
+                _ => False
             }
     }
 }
@@ -509,3 +602,9 @@ expect {
     actual = table |> render_block()
     actual == expected
 }
+expect Err(RaggedRows) == TableSpec.new({
+    data: [
+        [Inlines([Text("1>5")])],
+        [Inlines([Text("3")]), Inlines([Text("4")])],
+    ]
+})

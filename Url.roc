@@ -3,6 +3,15 @@ Url := [
     MailTo(MailToSpec),
     Relative(RelativeSpec),
 ].{
+    is_eq : Url, Url -> Bool
+    is_eq = |this, that|
+        match (this, that) {
+            (Http(a), Http(b)) => a == b
+            (MailTo(a), MailTo(b)) => a == b
+            (Relative(a), Relative(b)) => a == b
+            _ => False
+        }
+
     to_str : Url -> Str
     to_str = |url|
         match url {
@@ -63,6 +72,14 @@ Url := [
         scheme: Scheme ?? Https,
         query: List(QueryParam) ?? [],
         fragment: Try(Str, [None]) ?? Err(None),
+    }.{
+        is_eq = |this, that|
+            this.host == that.host
+                and this.port == that.port
+                and this.path == that.path
+                and this.scheme == that.scheme
+                and this.query == that.query
+                and this.fragment ==  that.fragment
     }
 
     Scheme := [Http, Https].{
@@ -72,12 +89,22 @@ Url := [
                 Http => "http"
                 Https => "https"
             }
+
+        is_eq = |this, that|
+            match (this, that) {
+                (Http, Http) | (Https, Https) => True
+                _ => False
+            }
     }
 
     QueryParam := { key: Str, value: Str }.{
         url_encode : QueryParam -> Str
         url_encode = |qp|
             "${url_encode(qp.key)}=${url_encode(qp.value)}"
+
+        is_eq = |this, that|
+            this.key == that.key
+                and this.value == that.value
     }
 
     Address := { recipient: Str, domain: Host }.{
@@ -85,6 +112,9 @@ Url := [
         url_encode = |addr|
             "${url_encode(addr.recipient)}@${url_encode(addr.domain.to_str())}"
 
+        is_eq = |this, that|
+            this.recipient == that.recipient
+                and this.domain == that.domain
     }
 
     MailToSpec := {
@@ -93,6 +123,13 @@ Url := [
         body: Str ?? "",
         cc: List(Address) ?? [],
         bcc: List(Address)?? [],
+    }.{
+        is_eq = |this, that|
+            this.to == that.to
+                and this.subject == that.subject
+                and this.body == that.body
+                and this.cc == that.cc
+                and this.bcc == that.bcc
     }
 
     RelativeSpec := {
@@ -100,6 +137,12 @@ Url := [
         path: List(Str) ?? [],
         fragment: Try(Str, [None]) ?? Err(None),
         query: List(QueryParam) ?? [],
+    }.{
+        is_eq = |this, that|
+            this.root == that.root
+                and this.path == that.path
+                and this.fragment == that.fragment
+                and this.query == that.query
     }
 }
 
