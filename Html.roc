@@ -589,9 +589,9 @@ expect {
     actual == expected
 }
 expect {
-    expected = "<table><caption>a caption</caption><thead><tr><th scope=\"col\">one</th><th scope=\"col\">two</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr><tr><td>3</td><td>4</td></tr></tbody></table>"
+    expected = "<table><caption>a &lt;caption&gt;</caption><thead><tr><th scope=\"col\">one</th><th scope=\"col\">two</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr><tr><td>3</td><td>4</td></tr></tbody></table>"
     table_spec = TableSpec.new({
-        caption: "a caption",
+        caption: "a <caption>",
         headers: [Inlines([Text("one")]), Inlines([Text("two")])],
         data: [
             [Inlines([Text("1")]), Inlines([Text("2")])],
@@ -621,3 +621,5 @@ expect Err(RaggedRows) == TableSpec.new({
         [Inlines([Text("3")]), Inlines([Text("4")])],
     ]
 })
+
+expect "<table></table>" == TableSpec.new()? |> Table |> render_block
