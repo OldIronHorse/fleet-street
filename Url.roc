@@ -22,8 +22,8 @@ Url := [
             MailTo(mt) => {
                 subject = if mt.subject.is_empty() [] else ["subject=${url_encode(mt.subject)}"]
                 body = if mt.body.is_empty() [] else ["body=${url_encode(mt.body)}"]
-                cc = mt.cc.map(|a| "cc=${a.url_encode()}")
-                bcc = mt.bcc.map(|a| "bcc=${a.url_encode()}")
+                cc = if mt.cc.is_empty() [] else ["cc=${mt.cc.map(Address.url_encode) |> Str.join_with(",")}"]
+                bcc = if mt.bcc.is_empty() []  else ["bcc=${mt.bcc.map(Address.url_encode) |> Str.join_with(",")}"]
                 args = [subject, body, cc, bcc]
                     .join()
                     |> Str.join_with("&")
@@ -352,11 +352,14 @@ expect "/?name=Joe%20Bl%26ggs&age=4%235#intro"
         query: [{ key: "name", value: "Joe Bl&ggs" }, { key: "age", value: "4#5" }],
     }) |> Url.to_str()
 
-expect "mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link"
-    == MailTo({
+expect {
+    expected = "mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link"
+    actual = MailTo({
         to: { recipient: "someone", domain: Url.Host.from_str("example.com")? },
         subject: "Feedback Request & Link",
     }) |> Url.to_str()
+    actual == expected
+}
 
 expect {
     expected ="mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link&body=Please%20provide%20feedback.&cc=cc1@elsewhere.com,cc2@example.com&bcc=bc1@elsewhere.com,bc2@example.com"
