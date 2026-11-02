@@ -207,6 +207,10 @@ expect "https://example.com/one/two/three/four.html"
     == Http({ host: Host.from_str("example.com")?, path: ["one", "two", "three", "four.html"] })
         |> Url.to_str()
 
+expect "https://example.com/one/two//three/four.html"
+    == Http({ host: Host.from_str("example.com")?, path: ["one", "two", "", "three", "four.html"] })
+        |> Url.to_str()
+
 expect "https://example.com/one/two/three/four.html#section%201"
     == Http({
         host: Host.from_str("example.com")?,
@@ -240,6 +244,14 @@ expect "https://example.com/one/two/three/four.html?name=Joe%20Bl%26ggs&age=4%23
         host: Host.from_str("example.com")?,
         path: ["one", "two", "three", "four.html"],
         query: [{ key: "name", value: "Joe Bl&ggs" }, { key: "age", value: "4#5" }],
+    }) |> Url.to_str()
+
+expect "https://example.com/one/two/three/four.html?name=Joe%20Bl%26ggs&age=4%235#intro"
+    == Http({
+        host: Host.from_str("example.com")?,
+        path: ["one", "two", "three", "four.html"],
+        query: [{ key: "name", value: "Joe Bl&ggs" }, { key: "age", value: "4#5" }],
+        fragment: Ok("intro"),
     }) |> Url.to_str()
 
 expect "https://example.com/one/two/three/four.html"
@@ -316,4 +328,10 @@ expect {
     actual = Relative({ root: True, path: ["about.html"] }) |> Url.to_str()
     actual == expected
 }
+expect "/" == Relative({ root: True }) |> Url.to_str()
+expect "" == Relative({}) |> Url.to_str()
+expect "?name=Joe%20Bl%26ggs&age=4%235"
+    == Relative({
+        query: [{ key: "name", value: "Joe Bl&ggs" }, { key: "age", value: "4#5" }],
+    }) |> Url.to_str()
 
