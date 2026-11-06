@@ -78,7 +78,7 @@ expand_or_return! = |paths|
         [path, .. as rest] =>
             match path.type!() {
                 Err(e) => Ok((Err(e), rest))
-                Ok(IsFile) if path.ext() == Ok("md") => Ok((Ok(path), rest))
+                Ok(IsFile) if path.ext().ok_or("").caseless_ascii_equals("md") => Ok((Ok(path), rest))
                 Ok(IsDir) if is_hidden(path) => Ok((Err(Hidden(path)), rest))
                 Ok(IsDir) =>
                     match path.list!() {
