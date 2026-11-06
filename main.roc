@@ -10,19 +10,22 @@ app [main!] {
 }
 
 import cli.Stdout
+import cli.Stdin
+import cli.Stderr
 import cli.OsStr
 import cli.Path
+import cli.IOErr
 import weaver.Cli
 import weaver.Opt
 import weaver.Param
 import parser.Markdown
+import parser.Yaml
 import Html
 import MdToHtml
 
 CliArgs : {
-    input: Str,
     output: Str,
-    changed: List(Str),
+    input: Str,
 }
 
 source =
@@ -45,42 +48,57 @@ source =
     \\
     \\***
     \\
-    \\<div>raw</div>
 
 main! = |args| {
     match Cli.parse_or_display_message(cli_parser, args, OsStr.to_raw) {
         Ok(parsed_args) => {
-            match parsed_args.changed {
-                [] => build!(
-                    parsed_args.input |> OsStr.from_str() |> Path.from_os_str(),
-                    parsed_args.output |> OsStr.from_str() |> Path.from_os_str())
-                fs => rebuild!(
-                    parsed_args.input |> OsStr.from_str() |> Path.from_os_str(),
-                    fs.map(|f| f |> OsStr.from_str() |> Path.from_os_str()),
-                    parsed_args.output |> OsStr.from_str() |> Path.from_os_str())
-            }
+            files = Stream.custom([parsed_args.input |> OsStr.from_str() |> Path.from_os_str()], Unknown, expand_or_return!)
+            build!(files, parsed_args.output |> OsStr.from_str() |> Path.from_os_str())
         }
         Err(Help(msg)) => Stdout.line!(msg)
         Err(Version(msg)) => Stdout.line!(msg)
-        Err(InvalidUsage(msg)) => Stdout.line!(msg)
+        Err(InvalidUsage(msg)) => {
+            _ = Stdout.line!(msg)
+            Err(Exit(1))
+        }
     }
 }
+
+is_hidden : Path -> Bool
+is_hidden = |path|
+    match path.filename() {
+        Ok(fn) => fn.display().starts_with(".")
+        Err(_) => False
+    }
+
+expand_or_return! : List(Path) => Try((Try(Path, _), List(Path)), _)
+expand_or_return! = |paths|
+    match paths {
+        [] => Err(NoMore)
+        [path, .. as rest] =>
+            match path.type!() {
+                Err(e) => Ok((Err(e), rest))
+                Ok(IsFile) if path.ext() == Ok("md") => Ok((Ok(path), rest))
+                Ok(IsDir) if is_hidden(path) => Ok((Err(Hidden(path)), rest))
+                Ok(IsDir) =>
+                    match path.list!() {
+                        Ok(ps) => rest.concat(ps) |> expand_or_return!()
+                        Err(e) => Ok((Err(e), rest))
+                    }
+                Ok(_) => Ok((Err(NotMarkdown(path)), rest))
+            }
+    }
 
 cli_parser : Cli.CliParser(CliArgs)
 cli_parser =
     Cli.assert_valid(
         Cli.finish(
             {
-                changed: Opt.str_list({
-                    short: "c",
-                    long: "changed",
-                    help: "Changed files for a partial rebuild.",
-                }),
                 input: Opt.str({
                     long: "input",
                     short: "i",
-                    help: "Input path. (default: .)",
-                    default: Value("."),
+                    help: "Root input directory, - to read files from stdin. (default: md)",
+                    default: Value("md"),
                 }),
                 output: Opt.str({
                     long: "output",
@@ -99,28 +117,47 @@ cli_parser =
         ),
     )
 
-rebuild! : Path, List(Path), Path => Try({}, _)
-rebuild! = |_input, _files, _output| Err(NotImplemented)
+Index : Dict(Path, Try(Frontmatter, [Hidden, Missing, NotMarkdown, PathErr(IOErr,Path)]))
 
-build! : Path, Path => Try({}, _)
-build! = |input, _output| {
-    input |> walk_files!()?.for_each!(|f| {
-        _ = Stdout.line!(Str.inspect(f))
-    })
+build! : Stream(Try(Path, [Hidden(Path), NotMarkdown(Path), PathErr(IOErr, Path)])), Path => Try({}, _)
+build! = |files, _output| {
+    index = files.fold!(Dict.empty(), update_index!)
+    dbg index
     Ok({})
 }
 
-walk_files! : Path => Try(Stream(Path), _)
-walk_files! = |path|
-    Stream.custom(
-        path.list!()?,
-        Unknown,
-        expand_dir
-    ) |> Ok
-
-expand_dir = |ps|
-    match ps {
-        []  => Err(NoMore)
-        [p, .. as rest] if p.is_dir!().map_err(|_| NoMore)? => expand_dir(rest.concat(p.list!().map_err(|_| NoMore)?))
-        [p, .. as rest] => Ok((p, rest))
+update_index! : Index, Try(Path, [Hidden(Path), NotMarkdown(Path), PathErr(IOErr, Path)]) => Index
+update_index! = |idx, p|
+    match p {
+        Ok(path) =>
+            match path.read_utf8!() {
+                Ok(s) =>
+                    match s|> Markdown.parse_str() |> Markdown.frontmatter() {
+                        Ok(fm) =>
+                            idx.insert(path, Ok(load_frontmatter(fm).ok_or({ title: "", tags: []}))) # parse frontmatter, add to index
+                        Err(Missing) =>
+                            idx.insert(path, Err(Missing))
+                    }
+                Err(PathErr(e, path_)) => {
+                    idx.insert(path, Err(PathErr(e, path_)))
+                }
+            }
+        Err(Hidden(path)) => idx.insert(path, Err(Hidden))
+        Err(NotMarkdown(path)) => idx.insert(path, Err(NotMarkdown))
+        Err(PathErr(e, path)) => idx.insert(path, Err(PathErr(e, path)))
     }
+
+load_frontmatter : Str -> Try(Frontmatter, _)
+load_frontmatter = |s|
+    match Yaml.decode(s) {
+        Ok(fm) => Ok(fm)
+        Err(e) => {
+            dbg e
+            Err(e)
+        }
+    }
+
+Frontmatter : {
+    title: Str,
+    tags: List(Str)
+}
