@@ -71,21 +71,26 @@ is_hidden = |path|
         Err(_) => False
     }
 
-expand_or_return! : List(Path) => Try((Try(Path, _), List(Path)), _)
+asset_exts = ["css", "jpg", "jpeg", "gif", "png", "svg"]
+
+expand_or_return! : List(Path) => Try(([Page(Path), Asset(Path), Skipped(Path), Failed(Path, IOErr)], List(Path)), [NoMore])
 expand_or_return! = |paths|
     match paths {
         [] => Err(NoMore)
         [path, .. as rest] =>
             match path.type!() {
-                Err(e) => Ok((Err(e), rest))
-                Ok(IsFile) if path.ext().ok_or("").caseless_ascii_equals("md") => Ok((Ok(path), rest))
-                Ok(IsDir) if is_hidden(path) => Ok((Err(Hidden(path)), rest))
+                Err(PathErr(_, e)) => Ok((Failed(path, e), rest))
+                Ok(IsFile) if path.ext().map_ok(Path.display).ok_or("").caseless_ascii_equals("md") =>
+                    Ok((Page(path), rest))
+                Ok(IsFile) if asset_exts.contains(path.ext().map_ok(Path.display).ok_or("").with_ascii_lowercased()) =>
+                    Ok((Asset(path), rest))
+                Ok(IsDir) if is_hidden(path) => Ok((Skipped(path), rest))
                 Ok(IsDir) =>
                     match path.list!() {
                         Ok(ps) => rest.concat(ps) |> expand_or_return!()
-                        Err(e) => Ok((Err(e), rest))
+                        Err(PathErr(_, e)) => Ok((Failed(path, e), rest))
                     }
-                Ok(_) => Ok((Err(NotMarkdown(path)), rest))
+                Ok(_) => Ok((Skipped(path), rest))
             }
     }
 
@@ -117,34 +122,40 @@ cli_parser =
         ),
     )
 
-Index : Dict(Path, Try(Frontmatter, [Hidden, Missing, NotMarkdown, PathErr(IOErr,Path)]))
+Index : Dict(Path, [
+    Page(Frontmatter), Asset, Skipped, NoFrontmatter, IOFailed(IOErr),
+    BadFrontmatter([InvalidYaml(Yaml.Error), MissingRequiredField(Str)]),
+])
 
-build! : Stream(Try(Path, [Hidden(Path), NotMarkdown(Path), PathErr(IOErr, Path)])), Path => Try({}, _)
+build! : Stream([Page(Path), Asset(Path), Skipped(Path), Failed(Path, IOErr)]), Path => Try({}, _)
 build! = |files, _output| {
     index = files.fold!(Dict.empty(), update_index!)
     dbg index
     Ok({})
 }
 
-update_index! : Index, Try(Path, [Hidden(Path), NotMarkdown(Path), PathErr(IOErr, Path)]) => Index
+update_index! : Index, [Page(Path), Asset(Path), Skipped(Path), Failed(Path, _)] => Index
 update_index! = |idx, p|
     match p {
-        Ok(path) =>
+        Page(path) =>
             match path.read_utf8!() {
                 Ok(s) =>
                     match s|> Markdown.parse_str() |> Markdown.frontmatter() {
                         Ok(fm) =>
-                            idx.insert(path, Ok(load_frontmatter(fm).ok_or({ title: "", tags: []}))) # parse frontmatter, add to index
+                            idx.insert(path, match load_frontmatter(fm) {
+                                Ok(c) => Page(c)
+                                Err(e) => BadFrontmatter(e)
+                            })
                         Err(Missing) =>
-                            idx.insert(path, Err(Missing))
+                            idx.insert(path, NoFrontmatter)
                     }
-                Err(PathErr(e, path_)) => {
-                    idx.insert(path, Err(PathErr(e, path_)))
+                Err(PathErr(e, _)) => {
+                    idx.insert(path, IOFailed(e))
                 }
             }
-        Err(Hidden(path)) => idx.insert(path, Err(Hidden))
-        Err(NotMarkdown(path)) => idx.insert(path, Err(NotMarkdown))
-        Err(PathErr(e, path)) => idx.insert(path, Err(PathErr(e, path)))
+        Asset(path) => idx.insert(path, Asset)
+        Skipped(_) => idx
+        Failed(path, e) => idx.insert(path, IOFailed(e))
     }
 
 load_frontmatter : Str -> Try(Frontmatter, _)
