@@ -58,7 +58,7 @@ main! = |args| {
         Err(Help(msg)) => Stdout.line!(msg)
         Err(Version(msg)) => Stdout.line!(msg)
         Err(InvalidUsage(msg)) => {
-            _ = Stdout.line!(msg)
+            _ = Stderr.line!(msg)
             Err(Exit(1))
         }
     }
@@ -71,26 +71,24 @@ is_hidden = |path|
         Err(_) => False
     }
 
-asset_exts = ["css", "jpg", "jpeg", "gif", "png", "svg"]
-
-expand_or_return! : List(Path) => Try(([Page(Path), Asset(Path), Skipped(Path), Failed(Path, IOErr)], List(Path)), [NoMore])
+expand_or_return! : List(Path) => Try(([Page(Path), Asset(Path), Skipped(Path, Reason), Failed(Path, IOErr)], List(Path)), [NoMore])
 expand_or_return! = |paths|
     match paths {
         [] => Err(NoMore)
         [path, .. as rest] =>
             match path.type!() {
-                Err(PathErr(_, e)) => Ok((Failed(path, e), rest))
-                Ok(IsFile) if path.ext().map_ok(Path.display).ok_or("").caseless_ascii_equals("md") =>
-                    Ok((Page(path), rest))
-                Ok(IsFile) if asset_exts.contains(path.ext().map_ok(Path.display).ok_or("").with_ascii_lowercased()) =>
-                    Ok((Asset(path), rest))
-                Ok(IsDir) if is_hidden(path) => Ok((Skipped(path), rest))
-                Ok(IsDir) =>
-                    match path.list!() {
-                        Ok(ps) => rest.concat(ps) |> expand_or_return!()
-                        Err(PathErr(_, e)) => Ok((Failed(path, e), rest))
+                Err(PathErr(e, _)) => Ok((Failed(path, e), rest))
+                Ok(type) =>
+                    match classify(path, type) {
+                        Page => Ok((Page(path), rest))
+                        Asset => Ok((Asset(path), rest))
+                        Skip(reason) => Ok((Skipped(path, reason), rest))
+                        Descend =>
+                            match path.list!() {
+                                Ok(ps) => rest.concat(ps) |> expand_or_return!()
+                                Err(PathErr(e, _)) => Ok((Failed(path, e), rest))
+                            }
                     }
-                Ok(_) => Ok((Skipped(path), rest))
             }
     }
 
@@ -127,14 +125,14 @@ Index : Dict(Path, [
     BadFrontmatter([InvalidYaml(Yaml.Error), MissingRequiredField(Str)]),
 ])
 
-build! : Stream([Page(Path), Asset(Path), Skipped(Path), Failed(Path, IOErr)]), Path => Try({}, _)
+build! : Stream([Page(Path), Asset(Path), Skipped(Path, Reason), Failed(Path, IOErr)]), Path => Try({}, _)
 build! = |files, _output| {
     index = files.fold!(Dict.empty(), update_index!)
     dbg index
     Ok({})
 }
 
-update_index! : Index, [Page(Path), Asset(Path), Skipped(Path), Failed(Path, _)] => Index
+update_index! : Index, [Page(Path), Asset(Path), Skipped(Path, Reason), Failed(Path, _)] => Index
 update_index! = |idx, p|
     match p {
         Page(path) =>
@@ -154,7 +152,7 @@ update_index! = |idx, p|
                 }
             }
         Asset(path) => idx.insert(path, Asset)
-        Skipped(_) => idx
+        Skipped(_, _) => idx
         Failed(path, e) => idx.insert(path, IOFailed(e))
     }
 
@@ -172,3 +170,53 @@ Frontmatter : {
     title: Str,
     tags: List(Str)
 }
+
+asset_exts = ["css", "jpg", "jpeg", "gif", "png", "svg", "woff", "woff2"]
+
+Reason : [Hidden, SymLink, Other, Unknown]
+
+classify : Path, [IsFile, IsDir, IsSymLink, IsOther] -> [Page, Skip(Reason), Asset, Descend]
+classify = |path, type|
+    match type {
+        IsSymLink => Skip(SymLink)
+        IsOther => Skip(Other)
+        IsFile | IsDir =>
+            match path.filename() {
+                Ok(filename) if filename.display().starts_with(".") => Skip(Hidden)
+                Ok(_) =>
+                    if type == IsDir
+                        Descend
+                    else
+                        match path.ext() {
+                            Ok(md) if md.display().caseless_ascii_equals("md") => Page
+                            Ok(ext) if asset_exts.contains(ext.display().with_ascii_lowercased()) => Asset
+                            _ => Skip(Unknown)
+                        }
+                _ => Skip(Unknown)
+            }
+    }
+
+expect Page == classify("some.md", IsFile)
+expect Page == classify("some.MD", IsFile)
+expect Skip(Hidden) == classify(".gitignore", IsFile)
+expect Skip(Hidden) == classify(".some.md", IsFile)
+expect Skip(Hidden) == classify(".git", IsDir)
+expect Skip(SymLink) == classify("any", IsSymLink)
+expect Skip(Other) == classify("any", IsOther)
+expect Skip(Unknown) == classify("any", IsFile)
+expect Descend == classify("git", IsDir)
+expect Asset == classify("some.css", IsFile)
+expect Asset == classify("some.png", IsFile)
+expect Asset == classify("some.svg", IsFile)
+expect Asset == classify("some.jpg", IsFile)
+expect Asset == classify("some.jpeg", IsFile)
+expect Asset == classify("some.woff", IsFile)
+expect Asset == classify("some.woff2", IsFile)
+expect Asset == classify("some.CSS", IsFile)
+expect Asset == classify("some.PNG", IsFile)
+expect Asset == classify("some.SVG", IsFile)
+expect Asset == classify("some.JPG", IsFile)
+expect Asset == classify("some.JPEG", IsFile)
+expect Asset == classify("some.WOFF", IsFile)
+expect Asset == classify("some.WOFF2", IsFile)
+
