@@ -100,14 +100,14 @@ cli_parser =
                 input: Opt.str({
                     long: "input",
                     short: "i",
-                    help: "Root input directory, - to read files from stdin. (default: md)",
-                    default: Value("md"),
+                    help: "Root input directory. (default: ./md)",
+                    default: Value("./md"),
                 }),
                 output: Opt.str({
                     long: "output",
                     short: "o",
-                    help: "Output path. (default: dist)",
-                    default: Value("dist"),
+                    help: "Output path. (default: ./dist)",
+                    default: Value("./dist"),
                 }),
             }.Cli,
             {
