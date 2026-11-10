@@ -161,7 +161,6 @@ load_frontmatter = |s|
     match Yaml.decode(s) {
         Ok(fm) => Ok(fm)
         Err(e) => {
-            dbg e
             Err(e)
         }
     }
