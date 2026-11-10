@@ -101,7 +101,7 @@ cli_parser =
                     long: "input",
                     short: "i",
                     help: "Root input directory. (default: ./md)",
-                    default: Value("./md"),
+                    default: Value("md"),
                 }),
                 output: Opt.str({
                     long: "output",
@@ -192,7 +192,18 @@ classify = |path, type|
                             Ok(ext) if asset_exts.contains(ext.display().with_ascii_lowercased()) => Asset
                             _ => Skip(Unknown)
                         }
-                _ => Skip(Unknown)
+                _ =>
+                    if type == IsDir
+                        match path.to_str() {
+                            Ok(parts) =>
+                                match parts.split_on("/").drop_if(|s| s == "") {
+                                    [.., name] if name.starts_with(".") => Skip(Hidden)
+                                    _ => Descend
+                                }
+                            _ => Skip(Unknown)
+                        }
+                    else
+                        Skip(Unknown)
             }
     }
 
@@ -205,6 +216,10 @@ expect Skip(SymLink) == classify("any", IsSymLink)
 expect Skip(Other) == classify("any", IsOther)
 expect Skip(Unknown) == classify("any", IsFile)
 expect Descend == classify("git", IsDir)
+expect Descend == classify("./test/md/", IsDir)
+expect Descend == classify("./test/md", IsDir)
+expect Skip(Hidden) == classify("./test/.md/", IsDir)
+expect Skip(Hidden) == classify("./test/.md", IsDir)
 expect Asset == classify("some.css", IsFile)
 expect Asset == classify("some.png", IsFile)
 expect Asset == classify("some.svg", IsFile)
