@@ -34,7 +34,7 @@ main! = |args| {
             files = Stream.custom([input_path], Err(Unknown), expand_or_return!)
             index = build_index!(files)
             if index.io_failed.is_empty() {
-                _ = Stdout.line!("Pages: ${index.pages.len().to_str()}, Assets: ${index.pages.len().to_str()}, Skipped: ${index.skipped.len().to_str()}")
+                _ = Stdout.line!("Pages: ${index.pages.len().to_str()}, Assets: ${index.assets.len().to_str()}, Skipped: ${index.skipped.len().to_str()}")
                 match copy_assets!(index.assets, input_path, output_path) {
                     Err(e) => {
                         _ = Stderr.line!("Error copying assets: ${Str.inspect(e)}")
@@ -46,7 +46,11 @@ main! = |args| {
                                 _ = Stderr.line!("Error: ${Str.inspect(e)}")
                                 Err(Exit(3))
                             }
-                            _ => Ok({})
+                            Ok([]) => Ok({})
+                            Ok(errors) => {
+                                _ = Stderr.line!("Error: ${Str.inspect(errors)}")
+                                Err(Exit(4))
+                            }
                         }
                 }
             }
@@ -71,15 +75,38 @@ copy_assets! = |assets, from, to|{
 }
 
 make_html! : Index, Path, Path => Try(List(Path), _)
-make_html! = |index, _input_path, _output_path|
+make_html! = |index, input_path, output_path|
     index.pages.to_list().fold_try!([], |errors, (path, page_type)|
-        match page_type {
-            Page(frontmatter) => {
-               dbg path.read_utf8!()? |> Markdown.parse_str() |> MdToHtml.doc(frontmatter.title)
-                Ok(errors)
-            }
+        match make_output_path(path, input_path, output_path) {
+            Ok(p) =>
+                match page_type {
+                    Page(frontmatter) => {
+                        match p.write_utf8!(
+                            path.read_utf8!()?
+                            |> Markdown.parse_str()
+                            |> MdToHtml.doc(frontmatter.title)
+                            .render()) {
+                                Ok({}) => Ok(errors)
+                                _ => Ok(errors.append(path))
+                        }
+                    }
+                    NoFrontmatter =>
+                        match p.write_utf8!(
+                            path.read_utf8!()?
+                            |> Markdown.parse_str()
+                            |> MdToHtml.doc("")
+                            .render()) {
+                                Ok({}) => Ok(errors)
+                                _ => Ok(errors.append(path))
+                        }
+                    _ => Ok(errors.append(path))
+                }
             _ => Ok(errors.append(path))
         })
+
+make_output_path : Path, Path, Path -> Try(Path, _)
+make_output_path = |file, input, output|
+    set_ext(output.join(relative_to(input, file)?.to_str()?), "html")
 
 expand_or_return! : List(Path) => Try(([Page(Path), Asset(Path), Skipped(Path, Reason), Failed(Path, IOErr)], List(Path)), [NoMore])
 expand_or_return! = |paths|
@@ -272,3 +299,22 @@ parts = |path|
 
 expect [".",  "test", "md"] == parts("./test/md")?
 expect [".",  "test", "md", "one", "1.md"] == parts("./test/md/one/1.md")?
+
+set_ext : Path, Str -> Try(Path, _)
+set_ext = |path, ext|
+    match parts(path)? {
+        [.. as root, file] =>
+            match file.split_on(".") {
+                [.. as rest, _ext] =>
+                    root.append(rest.append(ext) |> Str.join_with("."))
+                        |> Str.join_with("/")
+                        |> Path.utf8()
+                        |> Ok
+                [] => Err(EmptyFilename)
+            }
+        [] => Err(EmptyPath)
+    }
+
+expect "1.html" == set_ext("1.md", "html")?
+expect "one/two/three/1.html" == set_ext("one/two/three/1.md", "html")?
+expect "one/two/three/one.1.html" == set_ext("one/two/three/one.1.md", "html")?

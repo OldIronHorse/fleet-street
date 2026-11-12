@@ -13,7 +13,8 @@ inline : Markdown.Inline -> Html.Inline
 inline = |md|
     match md {
         Text(s) => Text(s)
-        Emphasis(ss) => Strong(ss.map(inline))
+        Strong(ss) => Strong(ss.map(inline))
+        Emphasis(ss) => Emphasis(ss.map(inline))
         _ => { crash "not implemented" }
     }
 
@@ -58,6 +59,12 @@ expect {
 
 expect {
     expected = [Text("Some "), Strong([Text("text")]), Text(".")]
+    actual = Markdown.parse_inlines("Some **text**.").map(inline)
+    actual == expected
+}
+
+expect {
+    expected = [Text("Some "), Emphasis([Text("text")]), Text(".")]
     actual = Markdown.parse_inlines("Some *text*.").map(inline)
     actual == expected
 }
@@ -86,9 +93,7 @@ expect {
             Paragraph(Html.ParagraphSpec.{ children: [Text("Buy these "), Strong([Text("today")]), Text(":")] }),
         ],
     }
-    md = \\# Shopping
-         \\
-         \\Buy these *today*:
+    md = "# Shopping\n\nBuy these **today**:"
     actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
     dbg actual
     dbg expected
