@@ -68,7 +68,7 @@ expect {
         head: Html.Doc.Head.{ title: "My Shopping List" },
         body: [Heading(Html.HeadingSpec.{ level: H1, children: [Text("Shopping")] })],
     }
-    actual = "# Shopping" |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
+    actual = "# Shopping\n\nBuy these *today*:" |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
     dbg actual
     dbg expected
     actual.render() == expected.render()
