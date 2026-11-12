@@ -61,3 +61,15 @@ expect {
     actual = Markdown.parse_inlines("Some *text*.").map(inline)
     actual == expected
 }
+
+expect {
+    expected = Html.Doc.{
+        lang: "en",
+        head: Html.Doc.Head.{ title: "My Shopping List" },
+        body: [Heading(Html.HeadingSpec.{ level: H1, children: [Text("Shopping")] })],
+    }
+    actual = "# Shopping" |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
+    dbg actual
+    dbg expected
+    actual.render() == expected.render()
+}
