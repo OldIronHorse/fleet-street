@@ -87,7 +87,7 @@ make_html! = |index, input_path, output_path|
                             |> MdToHtml.doc(frontmatter.title)
                             .render()) {
                                 Ok({}) => Ok(errors)
-                                _ => Ok(errors.append(path))
+                                Err(e) => Ok(errors.append(e))
                         }
                     }
                     NoFrontmatter =>
@@ -97,11 +97,11 @@ make_html! = |index, input_path, output_path|
                             |> MdToHtml.doc("")
                             .render()) {
                                 Ok({}) => Ok(errors)
-                                _ => Ok(errors.append(path))
+                                Err(e) => Ok(errors.append(e))
                         }
-                    _ => Ok(errors.append(path))
+                    _ => Ok(errors.append(FileTypeError(path)))
                 }
-            _ => Ok(errors.append(path))
+            _ => Ok(errors.append(PathError(path)))
         })
 
 make_output_path : Path, Path, Path -> Try(Path, _)
