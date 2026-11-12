@@ -66,9 +66,49 @@ expect {
     expected = Html.Doc.{
         lang: "en",
         head: Html.Doc.Head.{ title: "My Shopping List" },
-        body: [Heading(Html.HeadingSpec.{ level: H1, children: [Text("Shopping")] })],
+        body: [
+            Heading(Html.HeadingSpec.{ level: H1, children: [Text("Shopping")] }),
+        ],
     }
-    actual = "# Shopping\n\nBuy these *today*:" |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
+    md = "# Shopping"
+    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
+    dbg actual
+    dbg expected
+    actual.render() == expected.render()
+}
+
+expect {
+    expected = Html.Doc.{
+        lang: "en",
+        head: Html.Doc.Head.{ title: "My Shopping List" },
+        body: [
+            Heading(Html.HeadingSpec.{ level: H1, children: [Text("Shopping")] }),
+            Paragraph(Html.ParagraphSpec.{ children: [Text("Buy these "), Strong([Text("today")]), Text(":")] }),
+        ],
+    }
+    md = \\# Shopping
+         \\
+         \\Buy these *today*:
+    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
+    dbg actual
+    dbg expected
+    actual.render() == expected.render()
+}
+
+expect {
+    expected = Html.Doc.{
+        lang: "en",
+        head: Html.Doc.Head.{ title: "My Shopping List" },
+        body: [
+            UnorderedList(Html.ListSpec.{ items: [
+                Blocks([Paragraph(Html.ParagraphSpec.{ children: [Text("apples")] })]),
+                Blocks([Paragraph(Html.ParagraphSpec.{ children: [Text("pears")] })]),
+            ] }),
+        ],
+    }
+    md = \\- apples
+         \\- pears
+    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
     dbg actual
     dbg expected
     actual.render() == expected.render()
