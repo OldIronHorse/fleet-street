@@ -70,15 +70,28 @@ main! = |args| {
 
 copy_assets! : List(Path), Path, Path => Try({}, _)
 copy_assets! = |assets, from, to|{
-    _ = to.create_all!()?
-    assets.fold_try!({},|_, a| a.copy!(to.join(relative_to(from, a)?.to_str()?)))
+    assets.fold_try!({},|_, a| {
+        target = to.join(relative_to(from, a)?.to_str()?)
+        _ = ensure_creatable!(target)?
+        a.copy!(target)
+    })
 }
 
-make_html! : Index, Path, Path => Try(List(Path), _)
+ensure_creatable! : Path => Try({}, _)
+ensure_creatable! = |path|
+    path.to_str()?
+        .split_on("/")
+        .drop_last(1)
+        |> Str.join_with("/")
+        |> Path.utf8()
+        .create_all!()
+
+make_html! : Index, Path, Path => Try(List(_), _)
 make_html! = |index, input_path, output_path|
     index.pages.to_list().fold_try!([], |errors, (path, page_type)|
         match make_output_path(path, input_path, output_path) {
-            Ok(p) =>
+            Ok(p) => {
+                _ = ensure_creatable!(p)?
                 match page_type {
                     Page(frontmatter) => {
                         match p.write_utf8!(
@@ -101,6 +114,7 @@ make_html! = |index, input_path, output_path|
                         }
                     _ => Ok(errors.append(FileTypeError(path)))
                 }
+            }
             _ => Ok(errors.append(PathError(path)))
         })
 
