@@ -4,20 +4,18 @@
 ## Generate static websites from markdwon
 ##
 app [main!] {
-    cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.26.0/GddgvsGjiNXrHFW6au5i5dUDbTs8FinQdrgE2Gqmw53t.tar.zst",
-    parser: "https://github.com/lukewilliamboswell/roc-parser/releases/download/3.0.0/6xsRdRqenJrAb4wG7HaST4Xh349vD5sHAJDsKTK6E3dr.tar.zst",
-    weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.10.1/7CdYzjBAJmprmnK45oTpmH6BXt76ZASN2Ck5uZQEoWsK.tar.zst",
+    cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.28.0/2yhxoR7cZPSYbyUzPWULFw8AA6QEcdsgFNRmzu7pZbst.tar.zst",
+    parser: "https://github.com/lukewilliamboswell/roc-parser/releases/download/5.0.0/GWrbcSuoXstBeasuzyfMuXe99zFZFLgBhoWavjA7rteZ.tar.zst",
+    weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.10.2/7CdYzjBAJmprmnK45oTpmH6BXt76ZASN2Ck5uZQEoWsK.tar.zst",
 }
 
 import cli.Stdout
-import cli.Stdin
 import cli.Stderr
 import cli.OsStr
 import cli.Path
 import cli.IOErr
 import weaver.Cli
 import weaver.Opt
-import weaver.Param
 import parser.Markdown
 import parser.Yaml
 import Html
@@ -28,32 +26,34 @@ CliArgs : {
     input: Str,
 }
 
-source =
-    \\# Shopping
-    \\
-    \\Buy these *today*:
-    \\
-    \\- [x] apples
-    \\- [ ] pears
-    \\
-    \\> Quoted
-    \\
-    \\```roc
-    \\main = 1
-    \\```
-    \\
-    \\| Item | Qty |
-    \\| :--- | --: |
-    \\| pear | 2 |
-    \\
-    \\***
-    \\
-
 main! = |args| {
     match Cli.parse_or_display_message(cli_parser, args, OsStr.to_raw) {
         Ok(parsed_args) => {
-            files = Stream.custom([parsed_args.input |> OsStr.from_str() |> Path.from_os_str()], Unknown, expand_or_return!)
-            build!(files, parsed_args.output |> OsStr.from_str() |> Path.from_os_str())
+            input_path = parsed_args.input |> OsStr.from_str() |> Path.from_os_str()
+            output_path = parsed_args.output |> OsStr.from_str() |> Path.from_os_str()
+            files = Stream.custom([input_path], Err(Unknown), expand_or_return!)
+            index = build_index!(files)
+            if index.io_failed.is_empty() {
+                _ = Stdout.line!("Pages: ${index.pages.len().to_str()}, Assets: ${index.pages.len().to_str()}, Skipped: ${index.skipped.len().to_str()}")
+                match copy_assets!(index.assets, input_path, output_path) {
+                    Err(e) => {
+                        _ = Stderr.line!("Error copying assets: ${Str.inspect(e)}")
+                        Err(Exit(4))
+                    }
+                    _ =>
+                        match make_html!(index, input_path, output_path) {
+                            Err(e) => {
+                                _ = Stderr.line!("Error: ${Str.inspect(e)}")
+                                Err(Exit(3))
+                            }
+                            _ => Ok({})
+                        }
+                }
+            }
+            else {
+                _ = Stderr.line!("IO failures: ${Str.inspect(index.io_failed)}")
+                Err(Exit(2))
+            }
         }
         Err(Help(msg)) => Stdout.line!(msg)
         Err(Version(msg)) => Stdout.line!(msg)
@@ -64,12 +64,22 @@ main! = |args| {
     }
 }
 
-is_hidden : Path -> Bool
-is_hidden = |path|
-    match path.filename() {
-        Ok(fn) => fn.display().starts_with(".")
-        Err(_) => False
-    }
+copy_assets! : List(Path), Path, Path => Try({}, _)
+copy_assets! = |assets, from, to|{
+    _ = to.create_all!()?
+    assets.fold_try!({},|_, a| a.copy!(to.join(relative_to(from, a)?.to_str()?)))
+}
+
+make_html! : Index, Path, Path => Try(List(Path), _)
+make_html! = |index, _input_path, _output_path|
+    index.pages.to_list().fold_try!([], |errors, (path, page_type)|
+        match page_type {
+            Page(frontmatter) => {
+               dbg path.read_utf8!()? |> Markdown.parse_str() |> MdToHtml.doc(frontmatter.title)
+                Ok(errors)
+            }
+            _ => Ok(errors.append(path))
+        })
 
 expand_or_return! : List(Path) => Try(([Page(Path), Asset(Path), Skipped(Path, Reason), Failed(Path, IOErr)], List(Path)), [NoMore])
 expand_or_return! = |paths|
@@ -120,16 +130,16 @@ cli_parser =
         ),
     )
 
-Index : Dict(Path, [
-    Page(Frontmatter), Asset, Skipped, NoFrontmatter, IOFailed(IOErr),
-    BadFrontmatter([InvalidYaml(Yaml.Error), MissingRequiredField(Str)]),
-])
+Index := {
+    assets: List(Path) ?? [],
+    pages: Dict(Path, [Page(Frontmatter), NoFrontmatter, InvalidYaml(Yaml.Error), MissingRequiredField(Str)]) ?? Dict.empty(),
+    skipped: List((Path, Reason)) ?? [],
+    io_failed: List((Path, IOErr)) ??[],
+}
 
-build! : Stream([Page(Path), Asset(Path), Skipped(Path, Reason), Failed(Path, IOErr)]), Path => Try({}, _)
-build! = |files, _output| {
-    index = files.fold!(Dict.empty(), update_index!)
-    dbg index
-    Ok({})
+build_index! : Stream([Page(Path), Asset(Path), Skipped(Path, Reason), Failed(Path, IOErr)]) => Index
+build_index! = |files| {
+    files.fold!(Index.{}, update_index!)
 }
 
 update_index! : Index, [Page(Path), Asset(Path), Skipped(Path, Reason), Failed(Path, _)] => Index
@@ -138,22 +148,22 @@ update_index! = |idx, p|
         Page(path) =>
             match path.read_utf8!() {
                 Ok(s) =>
-                    match s|> Markdown.parse_str() |> Markdown.frontmatter() {
+                    match s |> Markdown.parse_str() |> Markdown.frontmatter() {
                         Ok(fm) =>
-                            idx.insert(path, match load_frontmatter(fm) {
+                            { ..idx, pages: idx.pages.insert(path, match load_frontmatter(fm) {
                                 Ok(c) => Page(c)
-                                Err(e) => BadFrontmatter(e)
-                            })
+                                Err(e) => e
+                            }) }
                         Err(Missing) =>
-                            idx.insert(path, NoFrontmatter)
+                            { ..idx, pages: idx.pages.insert(path, NoFrontmatter) }
                     }
                 Err(PathErr(e, _)) => {
-                    idx.insert(path, IOFailed(e))
+                    { ..idx, io_failed: idx.io_failed.append((path, e)) }
                 }
             }
-        Asset(path) => idx.insert(path, Asset)
-        Skipped(_, _) => idx
-        Failed(path, e) => idx.insert(path, IOFailed(e))
+        Asset(path) => { ..idx, assets: idx.assets.append(path) }
+        Skipped(path, reason) => { ..idx, skipped: idx.skipped.append((path, reason)) }
+        Failed(path, e) => { ..idx, io_failed: idx.io_failed.append((path, e)) }
     }
 
 load_frontmatter : Str -> Try(Frontmatter, _)
@@ -170,15 +180,17 @@ Frontmatter : {
     tags: List(Str)
 }
 
-asset_exts = ["css", "jpg", "jpeg", "gif", "png", "svg", "woff", "woff2"]
+asset_exts = ["css", "jpg", "jpeg", "gif", "png", "svg", "woff", "woff2", "ico"]
+dot_dirs = [".", "./", "..", "../"]
 
-Reason : [Hidden, SymLink, Other, Unknown]
+Reason : [Hidden, SymLink, Other, UnknownExt, BadPath]
 
 classify : Path, [IsFile, IsDir, IsSymLink, IsOther] -> [Page, Skip(Reason), Asset, Descend]
 classify = |path, type|
     match type {
         IsSymLink => Skip(SymLink)
         IsOther => Skip(Other)
+        IsDir if dot_dirs.contains(path) => Descend
         IsFile | IsDir =>
             match path.filename() {
                 Ok(filename) if filename.display().starts_with(".") => Skip(Hidden)
@@ -189,7 +201,7 @@ classify = |path, type|
                         match path.ext() {
                             Ok(md) if md.display().caseless_ascii_equals("md") => Page
                             Ok(ext) if asset_exts.contains(ext.display().with_ascii_lowercased()) => Asset
-                            _ => Skip(Unknown)
+                            _ => Skip(UnknownExt)
                         }
                 _ =>
                     if type == IsDir
@@ -199,10 +211,10 @@ classify = |path, type|
                                     [.., name] if name.starts_with(".") => Skip(Hidden)
                                     _ => Descend
                                 }
-                            _ => Skip(Unknown)
+                            _ => Skip(BadPath)
                         }
                     else
-                        Skip(Unknown)
+                        Skip(UnknownExt)
             }
     }
 
@@ -213,14 +225,22 @@ expect Skip(Hidden) == classify(".some.md", IsFile)
 expect Skip(Hidden) == classify(".git", IsDir)
 expect Skip(SymLink) == classify("any", IsSymLink)
 expect Skip(Other) == classify("any", IsOther)
-expect Skip(Unknown) == classify("any", IsFile)
+expect Skip(UnknownExt) == classify("any", IsFile)
+expect Skip(UnknownExt) == classify("archive.tar.gz", IsFile)
+expect Skip(UnknownExt) == classify("README", IsFile)
 expect Descend == classify("git", IsDir)
+expect Descend == classify("git.md", IsDir)
+expect Descend == classify(".", IsDir)
+expect Descend == classify("..", IsDir)
+expect Descend == classify("./", IsDir)
+expect Descend == classify("../", IsDir)
 expect Descend == classify("./test/md/", IsDir)
 expect Descend == classify("./test/md", IsDir)
 expect Skip(Hidden) == classify("./test/.md/", IsDir)
 expect Skip(Hidden) == classify("./test/.md", IsDir)
 expect Asset == classify("some.css", IsFile)
 expect Asset == classify("some.png", IsFile)
+expect Asset == classify("some.gif", IsFile)
 expect Asset == classify("some.svg", IsFile)
 expect Asset == classify("some.jpg", IsFile)
 expect Asset == classify("some.jpeg", IsFile)
@@ -228,9 +248,27 @@ expect Asset == classify("some.woff", IsFile)
 expect Asset == classify("some.woff2", IsFile)
 expect Asset == classify("some.CSS", IsFile)
 expect Asset == classify("some.PNG", IsFile)
+expect Asset == classify("some.GIF", IsFile)
 expect Asset == classify("some.SVG", IsFile)
 expect Asset == classify("some.JPG", IsFile)
 expect Asset == classify("some.JPEG", IsFile)
 expect Asset == classify("some.WOFF", IsFile)
 expect Asset == classify("some.WOFF2", IsFile)
 
+relative_to : Path, Path -> Try(Path, _)
+relative_to = |base, path|
+    parts(base)?.fold_try(parts(path)?, |ps, bp|
+        match ps {
+            [p, .. as rest] if p == bp => Ok(rest)
+            _ => Err(NotAChild)
+        })? |> Str.join_with("/") |> Path.utf8() |> Ok
+
+expect Ok("one/1.md") == relative_to("./test/md/", "./test/md/one/1.md")
+expect Err(NotAChild) == relative_to("./test/md/", "./test/one/1.md")
+
+parts : Path -> Try(List(Str), _)
+parts = |path|
+    path.to_str()?.split_on("/").drop_if(Str.is_empty) |> Ok
+
+expect [".",  "test", "md"] == parts("./test/md")?
+expect [".",  "test", "md", "one", "1.md"] == parts("./test/md/one/1.md")?

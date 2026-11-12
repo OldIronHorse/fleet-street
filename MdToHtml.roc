@@ -2,25 +2,62 @@ import parser.Markdown
 import Html
 
 MdToHtml := {}.{
-    inline : Markdown.Inline -> Html.Inline
-    inline = |md|
-        match md {
-            Text(s) => Text(s)
-            Emphasis(ss) => Strong(ss.map(inline))
-            _ => { crash "not implemented" }
-        }
+    doc : List(Markdown), Str -> Html.Doc
+    doc = |blocks, title| {
+        dbg blocks
+        blocks.fold(Html.Doc.with_head(Html.Doc.Head.{ title }), add_block)
+    }
 }
+
+inline : Markdown.Inline -> Html.Inline
+inline = |md|
+    match md {
+        Text(s) => Text(s)
+        Emphasis(ss) => Strong(ss.map(inline))
+        _ => { crash "not implemented" }
+    }
+
+add_block : Html.Doc, Markdown -> Html.Doc
+add_block = |doc, b|
+    match b {
+        Frontmatter(_) => doc
+        _ => doc.with_body(doc.body.append(block(b)))
+    }
+
+block : Markdown -> Html.Block
+block = |md|
+    match md {
+        Heading(h) => Heading(Html.HeadingSpec.{ level: heading_level(h.level), children: h.content.map(inline) })
+        Paragraph(cs) => Paragraph(Html.ParagraphSpec.{ children: cs.map(inline) })
+        ListBlock(lb) => {
+            list_spec = Html.ListSpec.{ items: lb.items.map(|i| i.blocks.map(block) |> Blocks) }
+            match lb.kind {
+                Unordered => UnorderedList(list_spec)
+                Ordered(_) => OrderedList(list_spec)
+            }
+        }
+        _ => Paragraph(Html.ParagraphSpec.{ children: [Text("Todo")] })
+    }
+
+heading_level : Markdown.Level -> Html.Level
+heading_level = |level|
+    match level {
+        One => H1
+        Two => H2
+        Three => H3
+        Four => H4
+        Five => H5
+        Six => H6
+    }
 
 expect {
     expected = [Text("Some text.")]
-    actual = Markdown.parse_inlines("Some text.").map(MdToHtml.inline)
+    actual = Markdown.parse_inlines("Some text.").map(inline)
     actual == expected
 }
 
 expect {
     expected = [Text("Some "), Strong([Text("text")]), Text(".")]
-    actual = Markdown.parse_inlines("Some *text*.").map(MdToHtml.inline)
-    dbg actual
-    dbg expected
+    actual = Markdown.parse_inlines("Some *text*.").map(inline)
     actual == expected
 }
