@@ -31,32 +31,37 @@ main! = |args| {
         Ok(parsed_args) => {
             input_path = parsed_args.input |> OsStr.from_str() |> Path.from_os_str()
             output_path = parsed_args.output |> OsStr.from_str() |> Path.from_os_str()
-            files = Stream.custom([input_path], Err(Unknown), expand_or_return!)
-            index = build_index!(files)
-            if index.io_failed.is_empty() {
-                _ = Stdout.line!("Pages: ${index.pages.len().to_str()}, Assets: ${index.assets.len().to_str()}, Skipped: ${index.skipped.len().to_str()}")
-                match copy_assets!(index.assets, input_path, output_path) {
-                    Err(e) => {
-                        _ = Stderr.line!("Error copying assets: ${Str.inspect(e)}")
-                        Err(Exit(4))
-                    }
-                    _ =>
-                        match make_html!(index, input_path, output_path) {
-                            Err(e) => {
-                                _ = Stderr.line!("Error: ${Str.inspect(e)}")
-                                Err(Exit(3))
-                            }
-                            Ok([]) => Ok({})
-                            Ok(errors) => {
-                                _ = Stderr.line!("Error: ${Str.inspect(errors)}")
-                                Err(Exit(4))
-                            }
+            if relative_to(input_path, output_path).is_ok() {
+                _ = Stderr.line!("Error: output cannot be a subdirectory of input.")
+                Err(Exit(5))
+            } else {
+                files = Stream.custom([input_path], Err(Unknown), expand_or_return!)
+                index = build_index!(files)
+                if index.io_failed.is_empty() {
+                    _ = Stdout.line!("Pages: ${index.pages.len().to_str()}, Assets: ${index.assets.len().to_str()}, Skipped: ${index.skipped.len().to_str()}")
+                    match copy_assets!(index.assets, input_path, output_path) {
+                        Err(e) => {
+                            _ = Stderr.line!("Error copying assets: ${Str.inspect(e)}")
+                            Err(Exit(4))
                         }
+                        _ =>
+                            match make_html!(index, input_path, output_path) {
+                                Err(e) => {
+                                    _ = Stderr.line!("Error: ${Str.inspect(e)}")
+                                    Err(Exit(3))
+                                }
+                                Ok([]) => Ok({})
+                                Ok(errors) => {
+                                    _ = Stderr.line!("Error: ${Str.inspect(errors)}")
+                                    Err(Exit(4))
+                                }
+                            }
+                    }
                 }
-            }
-            else {
-                _ = Stderr.line!("IO failures: ${Str.inspect(index.io_failed)}")
-                Err(Exit(2))
+                else {
+                    _ = Stderr.line!("IO failures: ${Str.inspect(index.io_failed)}")
+                    Err(Exit(2))
+                }
             }
         }
         Err(Help(msg)) => Stdout.line!(msg)
@@ -298,7 +303,10 @@ expect Asset == classify("some.WOFF2", IsFile)
 
 relative_to : Path, Path -> Try(Path, _)
 relative_to = |base, path|
-    parts(base)?.fold_try(parts(path)?, |ps, bp|
+    match parts(base)? {
+        [.. as ps, ""] => ps
+        ps => ps
+    }.fold_try(parts(path)?, |ps, bp|
         match ps {
             [p, .. as rest] if p == bp => Ok(rest)
             _ => Err(NotAChild)
@@ -309,7 +317,7 @@ expect Err(NotAChild) == relative_to("./test/md/", "./test/one/1.md")
 
 parts : Path -> Try(List(Str), _)
 parts = |path|
-    path.to_str()?.split_on("/").drop_if(Str.is_empty) |> Ok
+    path.to_str()?.split_on("/") |> Ok #.drop_if(Str.is_empty) |> Ok
 
 expect [".",  "test", "md"] == parts("./test/md")?
 expect [".",  "test", "md", "one", "1.md"] == parts("./test/md/one/1.md")?
@@ -331,4 +339,4 @@ set_ext = |path, ext|
 
 expect "1.html" == set_ext("1.md", "html")?
 expect "one/two/three/1.html" == set_ext("one/two/three/1.md", "html")?
-expect "one/two/three/one.1.html" == set_ext("one/two/three/one.1.md", "html")?
+expect "/one/two/three/one.1.html" == set_ext("/one/two/three/one.1.md", "html")?
