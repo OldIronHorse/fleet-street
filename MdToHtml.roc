@@ -43,6 +43,7 @@ block = |md|
                 contents: [Text(cs.pre)],
             }),
         ] })
+        ThematicBreak => Rule(Html.Attrs.{})
         b => {
             dbg b
             Paragraph(Html.ParagraphSpec.{ children: [Text("Todo")] })
@@ -163,7 +164,22 @@ expect {
          \\    s.repeat(n)
          \\```
     actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
-    dbg actual
-    dbg expected
+    actual.render() == expected.render()
+}
+
+expect {
+    expected = Html.Doc.{
+        lang: "en",
+        head: Html.Doc.Head.{ title: "My Shopping List" },
+        body: [
+            Rule(Html.Attrs.{}),
+            Rule(Html.Attrs.{}),
+            Rule(Html.Attrs.{}),
+        ],
+    }
+    md = \\***
+         \\---
+         \\___
+    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
     actual.render() == expected.render()
 }

@@ -81,6 +81,7 @@ Html := {}.{
         Table(TableSpec),
         BlockQuote(BlockQuoteSpec),
         Pre(ParagraphSpec),
+        Rule(Attrs),
     ].{
         is_eq = |this, that|
             match (this, that) {
@@ -92,6 +93,7 @@ Html := {}.{
                 (Pre(a), Pre(b)) => a == b
                 (Table(a), Table(b)) => a == b
                 (BlockQuote(a), BlockQuote(b)) => a == b
+                (Rule(a), Rule(b)) => a == b
                 _ => False
             }
     }
@@ -317,6 +319,7 @@ render_block = |b|
             "<blockquote>${bqs.contents.map(render_block) |> Str.join_with("")}</blockquote>"
         Pre(ps) =>
             "<pre>${render_inlines(ps.children)}</pre>"
+        Rule(attrs) => "<hr${render_attrs(attrs)}>"
     }
 
 render_table_row : List(Content) -> Str
@@ -692,4 +695,11 @@ expect "<pre><code class=\"roc\">1234 <strong>hello</strong>()</code></pre>"
         }|> Code
     ] } |> Pre |> render_block
 
-
+expect "<hr>" == Attrs.{} |> Rule |> render_block
+expect "<hr class=\"pretty\">" == Attrs.{ classes: ["pretty"] } |> Rule |> render_block
+expect "<div><p>A</p><hr><p>B</p></div>"
+    == Div(DivSpec.{ children: [
+        Paragraph(ParagraphSpec.{ children: [Text("A")] }),
+        Rule(Attrs.{}),
+        Paragraph(ParagraphSpec.{ children: [Text("B")] }),
+    ] }) |> render_block
