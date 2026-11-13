@@ -39,7 +39,7 @@ block = |md|
         Blockquote(bs) => BlockQuote(Html.BlockQuoteSpec.{ contents: bs.map(block) })
         Code(cs) => Pre(Html.ParagraphSpec.{ children: [
             Code(Html.CodeSpec.{
-                language: cs.info,
+                attrs: Html.Attrs.{ classes: [cs.info] },
                 contents: [Text(cs.pre)],
             }),
         ] })
@@ -144,11 +144,15 @@ expect {
         head: Html.Doc.Head.{ title: "My Shopping List" },
         body: [
             Pre(Html.ParagraphSpec.{ children: [
-                Code(Html.CodeSpec.{ language: "roc", contents: [Text(\\some_fn : Str, U64 -> Str
-                                                                      \\some_fn = |s, n|
-                                                                      \\    s.repeat(n)
-                                                                      \\
-                                                                )]
+                Code(Html.CodeSpec.{
+                    attrs: Html.Attrs.{ classes: ["roc"] },
+                    contents: [
+                        Text(\\some_fn : Str, U64 -> Str
+                             \\some_fn = |s, n|
+                             \\    s.repeat(n)
+                             \\
+                        )
+                    ]
                 }),
             ] }),
         ],

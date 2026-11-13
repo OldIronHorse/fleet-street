@@ -97,11 +97,11 @@ Html := {}.{
     }
 
     CodeSpec := {
-        language: Str ?? "",
+        attrs: Attrs ?? Attrs.{},
         contents: List(Inline),
     }.{
         is_eq = |this, that|
-            this.language == that.language
+            this.attrs == that.attrs
                 and this.contents == that.contents
     }
 
@@ -262,10 +262,8 @@ render_inline = |c|
             height = if s.height == 0 "" else " height=\"${s.height.to_str()}\""
             "<img${render_attrs(s.attrs)} src=\"${escape(s.url.to_str())}\" alt=\"${escape(s.alt)}\"${width}${height}>"
         }
-        Code(cs) => {
-            class = if cs.language.is_empty() "" else " class=\"${cs.language}\""
-            "<code${class}>${render_inlines(cs.contents)}</code>"
-        }
+        Code(cs) =>
+            "<code${render_attrs(cs.attrs)}>${render_inlines(cs.contents)}</code>"
     }
 
 render_inlines : List(Inline) -> Str
@@ -681,7 +679,7 @@ expect "<code>1234 <strong>hello</strong>()</code>"
     == CodeSpec.{ contents: [Text("1234 "), Strong([Text("hello")]), Text("()")] }|> Code |> render_inline
 expect "<code class=\"roc\">1234 <strong>hello</strong>()</code>"
     == CodeSpec.{
-        language: "roc",
+        attrs: Attrs.{ classes: ["roc"] },
         contents: [Text("1234 "), Strong([Text("hello")]), Text("()")],
     }|> Code |> render_inline
 
@@ -689,7 +687,7 @@ expect "<pre></pre>" == ParagraphSpec.{ children: [] } |> Pre |> render_block
 expect "<pre><code class=\"roc\">1234 <strong>hello</strong>()</code></pre>"
     == ParagraphSpec.{ children: [
         CodeSpec.{
-            language: "roc",
+            attrs: Attrs.{ classes: ["roc"] },
             contents: [Text("1234 "), Strong([Text("hello")]), Text("()")],
         }|> Code
     ] } |> Pre |> render_block
