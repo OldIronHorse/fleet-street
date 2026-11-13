@@ -42,7 +42,7 @@ main! = |args| {
                     match copy_assets!(index.assets, input_path, output_path) {
                         Err(e) => {
                             _ = Stderr.line!("Error copying assets: ${Str.inspect(e)}")
-                            Err(Exit(4))
+                            Err(Exit(6))
                         }
                         _ =>
                             match make_html!(index, input_path, output_path) {
@@ -313,6 +313,8 @@ relative_to = |base, path|
         })? |> Str.join_with("/") |> Path.utf8() |> Ok
 
 expect Ok("one/1.md") == relative_to("./test/md/", "./test/md/one/1.md")
+expect Ok("one/1.md") == relative_to("test/md/", "test/md/one/1.md")
+expect Ok("1.md") == relative_to(".", "./1.md")
 expect Err(NotAChild) == relative_to("./test/md/", "./test/one/1.md")
 
 parts : Path -> Try(List(Str), _)
@@ -339,4 +341,5 @@ set_ext = |path, ext|
 
 expect "1.html" == set_ext("1.md", "html")?
 expect "one/two/three/1.html" == set_ext("one/two/three/1.md", "html")?
+expect "one/two/thr.ee/1.html" == set_ext("one/two/thr.ee/1.md", "html")?
 expect "/one/two/three/one.1.html" == set_ext("/one/two/three/one.1.md", "html")?

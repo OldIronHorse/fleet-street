@@ -4,7 +4,6 @@ import Html
 MdToHtml := {}.{
     doc : List(Markdown), Str -> Html.Doc
     doc = |blocks, title| {
-        dbg blocks
         blocks.fold(Html.Doc.with_head(Html.Doc.Head.{ title }), add_block)
     }
 }
@@ -37,7 +36,17 @@ block = |md|
                 Ordered(_) => OrderedList(list_spec)
             }
         }
-        _ => Paragraph(Html.ParagraphSpec.{ children: [Text("Todo")] })
+        Blockquote(bs) => BlockQuote(Html.BlockQuoteSpec.{ contents: bs.map(block) })
+        Code(cs) => Pre(Html.ParagraphSpec.{ children: [
+            Code(Html.CodeSpec.{
+                language: cs.info,
+                contents: [Text(cs.pre)],
+            }),
+        ] })
+        b => {
+            dbg b
+            Paragraph(Html.ParagraphSpec.{ children: [Text("Todo")] })
+        }
     }
 
 heading_level : Markdown.Level -> Html.Level
@@ -79,8 +88,6 @@ expect {
     }
     md = "# Shopping"
     actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
-    dbg actual
-    dbg expected
     actual.render() == expected.render()
 }
 
@@ -95,8 +102,6 @@ expect {
     }
     md = "# Shopping\n\nBuy these **today**:"
     actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
-    dbg actual
-    dbg expected
     actual.render() == expected.render()
 }
 
@@ -113,6 +118,46 @@ expect {
     }
     md = \\- apples
          \\- pears
+    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
+    actual.render() == expected.render()
+}
+
+expect {
+    expected = Html.Doc.{
+        lang: "en",
+        head: Html.Doc.Head.{ title: "My Shopping List" },
+        body: [
+            BlockQuote(Html.BlockQuoteSpec.{ contents: [
+                Paragraph(Html.ParagraphSpec.{ children: [Text("apples\npears")] }),
+            ] }),
+        ],
+    }
+    md = \\> apples
+         \\> pears
+    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
+    actual.render() == expected.render()
+}
+
+expect {
+    expected = Html.Doc.{
+        lang: "en",
+        head: Html.Doc.Head.{ title: "My Shopping List" },
+        body: [
+            Pre(Html.ParagraphSpec.{ children: [
+                Code(Html.CodeSpec.{ language: "roc", contents: [Text(\\some_fn : Str, U64 -> Str
+                                                                      \\some_fn = |s, n|
+                                                                      \\    s.repeat(n)
+                                                                      \\
+                                                                )]
+                }),
+            ] }),
+        ],
+    }
+    md = \\```roc
+         \\some_fn : Str, U64 -> Str
+         \\some_fn = |s, n|
+         \\    s.repeat(n)
+         \\```
     actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
     dbg actual
     dbg expected

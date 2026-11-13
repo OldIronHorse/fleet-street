@@ -31,6 +31,7 @@ Html := {}.{
         Text(Str),
         Strong(List(Inline)),
         Emphasis(List(Inline)),
+        Code(CodeSpec),
         Link({ label: List(LinkContent), url: Url }),
         Image(ImageSpec),
     ].{
@@ -39,6 +40,7 @@ Html := {}.{
                 (Text(a), Text(b)) => a == b
                 (Strong(a), Strong(b)) => a == b
                 (Emphasis(a), Emphasis(b)) => a == b
+                (Code(a), Code(b)) => a == b
                 (Link(a), Link(b)) => a == b
                 (Image(a), Image(b)) => a == b
                 _ => False
@@ -77,6 +79,8 @@ Html := {}.{
         OrderedList(ListSpec),
         Div(DivSpec),
         Table(TableSpec),
+        BlockQuote(BlockQuoteSpec),
+        Pre(ParagraphSpec),
     ].{
         is_eq = |this, that|
             match (this, that) {
@@ -85,9 +89,27 @@ Html := {}.{
                 (UnorderedList(a), UnorderedList(b)) => a == b
                 (OrderedList(a), OrderedList(b)) => a == b
                 (Div(a), Div(b)) => a == b
+                (Pre(a), Pre(b)) => a == b
                 (Table(a), Table(b)) => a == b
+                (BlockQuote(a), BlockQuote(b)) => a == b
                 _ => False
             }
+    }
+
+    CodeSpec := {
+        language: Str ?? "",
+        contents: List(Inline),
+    }.{
+        is_eq = |this, that|
+            this.language == that.language
+                and this.contents == that.contents
+    }
+
+    BlockQuoteSpec := {
+        contents : List(Block),
+    }.{
+        is_eq = |this, that|
+            this.contents == that.contents
     }
 
     TableConfig := {
@@ -240,6 +262,10 @@ render_inline = |c|
             height = if s.height == 0 "" else " height=\"${s.height.to_str()}\""
             "<img${render_attrs(s.attrs)} src=\"${escape(s.url.to_str())}\" alt=\"${escape(s.alt)}\"${width}${height}>"
         }
+        Code(cs) => {
+            class = if cs.language.is_empty() "" else " class=\"${cs.language}\""
+            "<code${class}>${render_inlines(cs.contents)}</code>"
+        }
     }
 
 render_inlines : List(Inline) -> Str
@@ -289,6 +315,10 @@ render_block = |b|
             body = if rows.is_empty() "" else "<tbody>${rows |> Str.join_with("")}</tbody>"
             "<table${render_attrs(ts.attrs)}>${caption}${if hs.is_empty() "" else "<thead><tr>".concat(hs |> Str.join_with("")).concat("</tr></thead>")}${body}</table>"
         }
+        BlockQuote(bqs) =>
+            "<blockquote>${bqs.contents.map(render_block) |> Str.join_with("")}</blockquote>"
+        Pre(ps) =>
+            "<pre>${render_inlines(ps.children)}</pre>"
     }
 
 render_table_row : List(Content) -> Str
@@ -644,3 +674,24 @@ expect {
     actual = Table(ts) |> render_block()
     actual == expected
 }
+
+expect "<blockquote></blockquote>" == BlockQuoteSpec.{ contents: [] } |> BlockQuote |> render_block
+expect "<code></code>" == CodeSpec.{ contents: [] } |> Code |> render_inline
+expect "<code>1234 <strong>hello</strong>()</code>"
+    == CodeSpec.{ contents: [Text("1234 "), Strong([Text("hello")]), Text("()")] }|> Code |> render_inline
+expect "<code class=\"roc\">1234 <strong>hello</strong>()</code>"
+    == CodeSpec.{
+        language: "roc",
+        contents: [Text("1234 "), Strong([Text("hello")]), Text("()")],
+    }|> Code |> render_inline
+
+expect "<pre></pre>" == ParagraphSpec.{ children: [] } |> Pre |> render_block
+expect "<pre><code class=\"roc\">1234 <strong>hello</strong>()</code></pre>"
+    == ParagraphSpec.{ children: [
+        CodeSpec.{
+            language: "roc",
+            contents: [Text("1234 "), Strong([Text("hello")]), Text("()")],
+        }|> Code
+    ] } |> Pre |> render_block
+
+
