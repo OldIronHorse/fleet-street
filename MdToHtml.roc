@@ -39,11 +39,21 @@ block = |md|
         Blockquote(bs) => BlockQuote(Html.BlockQuoteSpec.{ contents: bs.map(block) })
         Code(cs) => Pre(Html.ParagraphSpec.{ children: [
             Code(Html.CodeSpec.{
-                attrs: Html.Attrs.{ classes: [cs.info] },
+                attrs: Html.Attrs.{ classes: ["language-${cs.info.split_first(" ").ok_or({ before: "", after: "" }).before}"] },
                 contents: [Text(cs.pre)],
             }),
         ] })
         ThematicBreak => Rule(Html.Attrs.{})
+        Table(t) =>
+            # Table({ header: [[Text("Item")], [Text("Qty")]], align: [Left, Right], rows: [[[Text("pear")], [Text("2")]]] })
+            match Html.TableSpec.new(Html.TableConfig.{
+                headers: t.header.map(|header| Inlines(header.map(|c| inline(c)))),
+                data: t.rows.map(|row| row.map(|cell| Inlines(cell.map(|c| inline(c))))),
+            }) {
+                Ok(ts) => Table(ts)
+                Err(e) =>
+                    Paragraph(Html.ParagraphSpec.{ children: [Text("Error: ${Str.inspect(e)}")] })
+            }
         b => {
             dbg b
             Paragraph(Html.ParagraphSpec.{ children: [Text("Todo")] })
@@ -146,7 +156,7 @@ expect {
         body: [
             Pre(Html.ParagraphSpec.{ children: [
                 Code(Html.CodeSpec.{
-                    attrs: Html.Attrs.{ classes: ["roc"] },
+                    attrs: Html.Attrs.{ classes: ["language-roc"] },
                     contents: [
                         Text(\\some_fn : Str, U64 -> Str
                              \\some_fn = |s, n|
@@ -158,12 +168,14 @@ expect {
             ] }),
         ],
     }
-    md = \\```roc
+    md = \\```roc title="x"
          \\some_fn : Str, U64 -> Str
          \\some_fn = |s, n|
          \\    s.repeat(n)
          \\```
     actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
+    dbg actual.render()
+    dbg expected.render()
     actual.render() == expected.render()
 }
 
@@ -180,6 +192,26 @@ expect {
     md = \\***
          \\---
          \\___
+    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
+    actual.render() == expected.render()
+}
+
+expect {
+    expected = Html.Doc.{
+        lang: "en",
+        head: Html.Doc.Head.{ title: "My Shopping List" },
+        body: [
+            Table(Html.TableSpec.new(Html.TableConfig.{
+                headers: [Inlines([Text("Item")]), Inlines([Text("Qty")])],
+                data: [
+                    [Inlines([Text("pear")]), Inlines([Text("2")])],
+                ],
+            })?),
+        ],
+    }
+    md = \\| Item | Qty |
+         \\| :--- | --: |
+         \\| pear | 2 |
     actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
     actual.render() == expected.render()
 }
