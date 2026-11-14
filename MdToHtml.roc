@@ -36,11 +36,11 @@ block = |md|
                 Ordered(_) => OrderedList(list_spec)
             }
         }
-        Blockquote(bs) => BlockQuote(Html.BlockQuoteSpec.{ contents: bs.map(block) })
+        Blockquote(bs) => BlockQuote(Html.BlocksSpec.{ contents: bs.map(block) })
         Code(cs) => Pre(Html.InlinesSpec.{ contents: [
-            Code(Html.InlinesSpec.{
+            Code({
                 attrs: Html.Attrs.{ classes: ["language-${cs.info.split_first(" ").ok_or({ before: "", after: "" }).before}"] },
-                contents: [Text(cs.pre)],
+                content: cs.pre,
             }),
         ] })
         ThematicBreak => Rule(Html.Attrs.{})
@@ -147,7 +147,7 @@ expect {
         lang: "en",
         head: Html.Doc.Head.{ title: "My Shopping List" },
         body: [
-            BlockQuote(Html.BlockQuoteSpec.{ contents: [
+            BlockQuote(Html.BlocksSpec.{ contents: [
                 Paragraph(Html.InlinesSpec.{ contents: [Text("apples\npears")] }),
             ] }),
         ],
@@ -164,15 +164,12 @@ expect {
         head: Html.Doc.Head.{ title: "My Shopping List" },
         body: [
             Pre(Html.InlinesSpec.{ contents: [
-                Code(Html.InlinesSpec.{
+                Code({
                     attrs: Html.Attrs.{ classes: ["language-roc"] },
-                    contents: [
-                        Text(\\some_fn : Str, U64 -> Str
+                    content: \\some_fn : Str, U64 -> Str
                              \\some_fn = |s, n|
                              \\    s.repeat(n)
                              \\
-                        )
-                    ]
                 }),
             ] }),
         ],

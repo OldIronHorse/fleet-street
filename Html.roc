@@ -31,7 +31,8 @@ Html := {}.{
         Text(Str),
         Strong(List(Inline)),
         Emphasis(List(Inline)),
-        Code(InlinesSpec),
+        Code({ attrs: Attrs, content: Str }),
+        Span(InlinesSpec),
         Link({ label: List(LinkContent), url: Url }),
         Image(ImageSpec),
     ].{
@@ -41,6 +42,7 @@ Html := {}.{
                 (Strong(a), Strong(b)) => a == b
                 (Emphasis(a), Emphasis(b)) => a == b
                 (Code(a), Code(b)) => a == b
+                (Span(a), Span(b)) => a == b
                 (Link(a), Link(b)) => a == b
                 (Image(a), Image(b)) => a == b
                 _ => False
@@ -52,6 +54,7 @@ Html := {}.{
         Strong(List(LinkContent)),
         Emphasis(List(LinkContent)),
         Image(ImageSpec),
+        Span({ attrs: Attrs, contents: List(LinkContent) })
     ].{
         to_inline : LinkContent -> Inline
         to_inline = |c|
@@ -59,6 +62,7 @@ Html := {}.{
                 Text(s) => Text(s)
                 Strong(cs) => Strong(cs.map(to_inline))
                 Emphasis(cs) => Emphasis(cs.map(to_inline))
+                Span(ss) => Span({ attrs: ss.attrs, contents: ss.contents.map(to_inline) }) 
                 Image(s) => Image(s)
             }
 
@@ -79,7 +83,7 @@ Html := {}.{
         OrderedList(ContentSpec),
         Div(BlocksSpec),
         Table(TableSpec),
-        BlockQuote(BlockQuoteSpec),
+        BlockQuote(BlocksSpec),
         Pre(InlinesSpec),
         Rule(Attrs),
     ].{
@@ -96,13 +100,6 @@ Html := {}.{
                 (Rule(a), Rule(b)) => a == b
                 _ => False
             }
-    }
-
-    BlockQuoteSpec := {
-        contents : List(Block),
-    }.{
-        is_eq = |this, that|
-            this.contents == that.contents
     }
 
     Alignment : [Left, Center, Right]
@@ -263,7 +260,9 @@ render_inline = |c|
             "<img${render_attrs(s.attrs)} src=\"${escape(s.url.to_str())}\" alt=\"${escape(s.alt)}\"${width}${height}>"
         }
         Code(cs) =>
-            "<code${render_attrs(cs.attrs)}>${render_inlines(cs.contents)}</code>"
+            "<code${render_attrs(cs.attrs)}>${cs.content}</code>"
+        Span(cs) =>
+            "<span${render_attrs(cs.attrs)}>${render_inlines(cs.contents)}</span>"
     }
 
 render_inlines : List(Inline) -> Str
@@ -315,7 +314,7 @@ render_block = |b|
             "<table${render_attrs(ts.attrs)}>${caption}${if hs.is_empty() "" else "<thead><tr>".concat(hs |> Str.join_with("")).concat("</tr></thead>")}${body}</table>"
         }
         BlockQuote(bqs) =>
-            "<blockquote>${bqs.contents.map(render_block) |> Str.join_with("")}</blockquote>"
+            "<blockquote${render_attrs(bqs.attrs)}>${bqs.contents.map(render_block) |> Str.join_with("")}</blockquote>"
         Pre(ps) =>
             "<pre>${render_inlines(ps.contents)}</pre>"
         Rule(attrs) => "<hr${render_attrs(attrs)}>"
@@ -689,23 +688,23 @@ expect {
     actual == expected
 }
 
-expect "<blockquote></blockquote>" == BlockQuoteSpec.{ contents: [] } |> BlockQuote |> render_block
-expect "<code></code>" == InlinesSpec.{ contents: [] } |> Code |> render_inline
-expect "<code>1234 <strong>hello</strong>()</code>"
-    == InlinesSpec.{ contents: [Text("1234 "), Strong([Text("hello")]), Text("()")] }|> Code |> render_inline
-expect "<code class=\"roc\">1234 <strong>hello</strong>()</code>"
-    == InlinesSpec.{
+expect "<blockquote></blockquote>" == BlocksSpec.{ contents: [] } |> BlockQuote |> render_block
+expect "<code></code>" == { attrs: Attrs.{}, content: "" } |> Code |> render_inline
+expect "<code>1234 hello()</code>"
+    == { attrs: Attrs.{}, content: "1234 hello()" } |> Code |> render_inline
+expect "<code class=\"roc\">1234 hello()</code>"
+    == {
         attrs: Attrs.{ classes: ["roc"] },
-        contents: [Text("1234 "), Strong([Text("hello")]), Text("()")],
+        content: "1234 hello()",
     }|> Code |> render_inline
 
 expect "<pre></pre>" == InlinesSpec.{ contents: [] } |> Pre |> render_block
-expect "<pre><code class=\"roc\">1234 <strong>hello</strong>()</code></pre>"
+expect "<pre><code class=\"roc\">1234 hello()</code></pre>"
     == InlinesSpec.{ contents: [
-        InlinesSpec.{
+        {
             attrs: Attrs.{ classes: ["roc"] },
-            contents: [Text("1234 "), Strong([Text("hello")]), Text("()")],
-        }|> Code
+            content: "1234 hello()",
+        } |> Code
     ] } |> Pre |> render_block
 
 expect "<hr>" == Attrs.{} |> Rule |> render_block
@@ -716,3 +715,5 @@ expect "<div><p>A</p><hr><p>B</p></div>"
         Rule(Attrs.{}),
         Paragraph(InlinesSpec.{ contents: [Text("B")] }),
     ] }) |> render_block
+
+expect "<span></span>" == InlinesSpec.{ contents: [] } |> Span |> render_inline
