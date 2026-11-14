@@ -31,7 +31,7 @@ main! = |args| {
         Ok(parsed_args) => {
             input_path = parsed_args.input |> OsStr.from_str() |> Path.from_os_str()
             output_path = parsed_args.output |> OsStr.from_str() |> Path.from_os_str()
-            if relative_to(input_path, output_path).is_ok() {
+            if relative_to(input_path.canonicalize!()?, output_path.canonicalize!()?).is_ok() {
                 _ = Stderr.line!("Error: output cannot be a subdirectory of input.")
                 Err(Exit(5))
             } else {

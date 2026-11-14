@@ -74,6 +74,8 @@ Html := {}.{
                 (Strong(a), Strong(b)) => a == b
                 (Emphasis(a), Emphasis(b)) => a == b
                 (Image(a), Image(b)) => a == b
+                (Code(a), Code(b)) => a == b
+                (Span(a), Span(b)) => a == b
                 _ => False
             }
     }
@@ -104,7 +106,7 @@ Html := {}.{
             }
     }
 
-    Alignment : [Left, Center, Right]
+    Alignment : [Default, Left, Center, Right]
 
     TableConfig := {
         attrs: Attrs ?? Attrs.{},
@@ -134,7 +136,7 @@ Html := {}.{
                 Ok({
                     attrs: tc.attrs,
                     caption: tc.caption,
-                    align: tc.align.concat(List.repeat(Left, width)).take_first(width),
+                    align: tc.align.concat(List.repeat(Default, width)).take_first(width),
                     headers: tc.headers,
                     data: tc.data,
                 })
@@ -322,9 +324,10 @@ render_block = |b|
         Rule(attrs) => "<hr${render_attrs(attrs)}>"
     }
 
-render_align : [Left, Center, Right] -> Str
+render_align : Alignment -> Str
 render_align = |a|
     match a {
+        Default => ""
         Left => " class=\"align-left\""
         Right => " class=\"align-right\""
         Center => " class=\"align-center\""
@@ -617,7 +620,7 @@ expect {
     actual == expected
 }
 expect {
-    expected = "<table><tbody><tr><td class=\"align-left\">1</td><td class=\"align-left\">2</td></tr><tr><td class=\"align-left\">3</td><td class=\"align-left\">4</td></tr></tbody></table>"
+    expected = "<table><tbody><tr><td>1</td><td>2</td></tr><tr><td>3</td><td>4</td></tr></tbody></table>"
     table_spec = TableSpec.new({
         data: [
             [Inlines([Text("1")]), Inlines([Text("2")])],
@@ -628,7 +631,7 @@ expect {
     actual == expected
 }
 expect {
-    expected = "<table><caption>a caption</caption><thead><tr><th scope=\"col\" class=\"align-left\">one</th><th scope=\"col\" class=\"align-left\">two</th></tr></thead></table>"
+    expected = "<table><caption>a caption</caption><thead><tr><th scope=\"col\">one</th><th scope=\"col\">two</th></tr></thead></table>"
     table_spec = TableSpec.new({
         caption: "a caption",
         headers: [Inlines([Text("one")]), Inlines([Text("two")])],
@@ -638,7 +641,7 @@ expect {
     actual == expected
 }
 expect {
-    expected = "<table><caption>a &lt;caption&gt;</caption><thead><tr><th scope=\"col\" class=\"align-left\">one</th><th scope=\"col\" class=\"align-left\">two</th></tr></thead><tbody><tr><td class=\"align-left\">1</td><td class=\"align-left\">2</td></tr><tr><td class=\"align-left\">3</td><td class=\"align-left\">4</td></tr></tbody></table>"
+    expected = "<table><caption>a &lt;caption&gt;</caption><thead><tr><th scope=\"col\">one</th><th scope=\"col\">two</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr><tr><td>3</td><td>4</td></tr></tbody></table>"
     table_spec = TableSpec.new({
         caption: "a <caption>",
         headers: [Inlines([Text("one")]), Inlines([Text("two")])],
@@ -651,7 +654,7 @@ expect {
     actual == expected
 }
 expect {
-    expected = "<table id=\"1234\" class=\"here there\"><thead><tr><th scope=\"col\" class=\"align-left\">one&lt;</th><th scope=\"col\" class=\"align-left\">two</th></tr></thead><tbody><tr><td class=\"align-left\">1&gt;5</td><td class=\"align-left\">2</td></tr><tr><td class=\"align-left\">3</td><td class=\"align-left\">4</td></tr></tbody></table>"
+    expected = "<table id=\"1234\" class=\"here there\"><thead><tr><th scope=\"col\">one&lt;</th><th scope=\"col\">two</th></tr></thead><tbody><tr><td>1&gt;5</td><td>2</td></tr><tr><td>3</td><td>4</td></tr></tbody></table>"
     table_spec = TableSpec.new({
         attrs: { id: "1234", classes: ["here", "there"] },
         headers: [Inlines([Text("one<")]), Inlines([Text("two")])],
@@ -680,7 +683,7 @@ expect "<table></table>" == TableSpec.{
     data: [],
 } |> Table |> render_block
 expect {
-    expected = "<table><tbody><tr><td class=\"align-left\"><p>some text</p></td></tr></tbody></table>"
+    expected = "<table><tbody><tr><td><p>some text</p></td></tr></tbody></table>"
     p = Paragraph(InlinesSpec.{ contents: [Text("some text")] })
     bs = Blocks([p])
     ts = TableSpec.new(TableConfig.{ data: [

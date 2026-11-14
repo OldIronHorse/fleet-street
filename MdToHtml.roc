@@ -66,7 +66,7 @@ block = |md|
 table_align : Markdown.Alignment -> Html.Alignment
 table_align = |a|
     match a {
-        Default => Left
+        Default => Default
         Left => Left
         Center => Center
         Right => Right
@@ -247,6 +247,27 @@ expect {
     md = \\***
          \\---
          \\___
+    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
+    actual.render() == expected.render()
+}
+
+expect {
+    expected = Html.Doc.{
+        lang: "en",
+        head: Html.Doc.Head.{ title: "My Shopping List" },
+        body: [
+            Table(Html.TableSpec.new(Html.TableConfig.{
+                headers: [Inlines([Text("Item")]), Inlines([Text("Qty")])],
+                align: [Left, Default],
+                data: [
+                    [Inlines([Text("pear")]), Inlines([Text("2")])],
+                ],
+            })?),
+        ],
+    }
+    md = \\| Item | Qty |
+         \\| :--- | --- |
+         \\| pear | 2 |
     actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
     actual.render() == expected.render()
 }
