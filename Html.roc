@@ -55,6 +55,7 @@ Html := {}.{
         Emphasis(List(LinkContent)),
         Image(ImageSpec),
         Span({ attrs: Attrs, contents: List(LinkContent) })
+        Code({ attrs: Attrs, content: Str }),
     ].{
         to_inline : LinkContent -> Inline
         to_inline = |c|
@@ -62,7 +63,8 @@ Html := {}.{
                 Text(s) => Text(s)
                 Strong(cs) => Strong(cs.map(to_inline))
                 Emphasis(cs) => Emphasis(cs.map(to_inline))
-                Span(ss) => Span({ attrs: ss.attrs, contents: ss.contents.map(to_inline) }) 
+                Span(ss) => Span({ attrs: ss.attrs, contents: ss.contents.map(to_inline) })
+                Code(cs) => Code({ attrs: cs.attrs, contents: cs.contents.map(to_inline) })
                 Image(s) => Image(s)
             }
 
@@ -260,7 +262,7 @@ render_inline = |c|
             "<img${render_attrs(s.attrs)} src=\"${escape(s.url.to_str())}\" alt=\"${escape(s.alt)}\"${width}${height}>"
         }
         Code(cs) =>
-            "<code${render_attrs(cs.attrs)}>${cs.content}</code>"
+            "<code${render_attrs(cs.attrs)}>${escape(cs.content)}</code>"
         Span(cs) =>
             "<span${render_attrs(cs.attrs)}>${render_inlines(cs.contents)}</span>"
     }
