@@ -31,7 +31,7 @@ Html := {}.{
         Text(Str),
         Strong(List(Inline)),
         Emphasis(List(Inline)),
-        Code(CodeSpec),
+        Code(InlinesSpec),
         Link({ label: List(LinkContent), url: Url }),
         Image(ImageSpec),
     ].{
@@ -74,13 +74,13 @@ Html := {}.{
 
     Block := [
         Heading(HeadingSpec),
-        Paragraph(ParagraphSpec),
-        UnorderedList(ListSpec),
-        OrderedList(ListSpec),
-        Div(DivSpec),
+        Paragraph(InlinesSpec),
+        UnorderedList(ContentSpec),
+        OrderedList(ContentSpec),
+        Div(BlocksSpec),
         Table(TableSpec),
         BlockQuote(BlockQuoteSpec),
-        Pre(ParagraphSpec),
+        Pre(InlinesSpec),
         Rule(Attrs),
     ].{
         is_eq = |this, that|
@@ -96,15 +96,6 @@ Html := {}.{
                 (Rule(a), Rule(b)) => a == b
                 _ => False
             }
-    }
-
-    CodeSpec := {
-        attrs: Attrs ?? Attrs.{},
-        contents: List(Inline),
-    }.{
-        is_eq = |this, that|
-            this.attrs == that.attrs
-                and this.contents == that.contents
     }
 
     BlockQuoteSpec := {
@@ -160,13 +151,13 @@ Html := {}.{
                 and this.data == that.data
     }
 
-    DivSpec := {
+    BlocksSpec := {
         attrs: Attrs ?? Attrs.{},
-        children: List(Block),
+        contents: List(Block),
     }.{
         is_eq = |this, that|
             this.attrs == that.attrs
-                and this.children == that.children
+                and this.contents == that.contents
     }
 
     ImageSpec := {
@@ -184,7 +175,7 @@ Html := {}.{
                 and this.width == that.width
     }
 
-    ListSpec := {
+    ContentSpec := {
         attrs: Attrs ?? Attrs.{},
         items: List(Content),
     }.{
@@ -217,21 +208,21 @@ Html := {}.{
     HeadingSpec := {
         attrs: Attrs ?? Attrs.{},
         level: Level,
-        children: List(Inline),
+        contents: List(Inline),
     }.{
         is_eq = |this, that|
             this.attrs == that.attrs
                 and this.level == that.level
-                and this.children == that.children
+                and this.contents == that.contents
     }
 
-    ParagraphSpec := {
+    InlinesSpec := {
         attrs: Attrs ?? Attrs.{},
-        children: List(Inline)
+        contents: List(Inline)
     }.{
         is_eq = |this, that|
             this.attrs == that.attrs
-                and this.children == that.children
+                and this.contents == that.contents
     }
 
     Level := [H1, H2, H3, H4, H5, H6].{
@@ -306,15 +297,15 @@ render_block : Block -> Str
 render_block = |b|
     match b {
         Heading(hs) =>
-            "<h${hs.level.to_str()}${render_attrs(hs.attrs)}>${render_inlines(hs.children)}</h${hs.level.to_str()}>"
+            "<h${hs.level.to_str()}${render_attrs(hs.attrs)}>${render_inlines(hs.contents)}</h${hs.level.to_str()}>"
         Paragraph(ps) =>
-            "<p${render_attrs(ps.attrs)}>${render_inlines(ps.children)}</p>"
+            "<p${render_attrs(ps.attrs)}>${render_inlines(ps.contents)}</p>"
         UnorderedList(ls) =>
             "<ul${render_attrs(ls.attrs)}>${render_list_contents(ls.items)}</ul>"
         OrderedList(ls) =>
             "<ol${render_attrs(ls.attrs)}>${render_list_contents(ls.items)}</ol>"
         Div(ds) =>
-            "<div${render_attrs(ds.attrs)}>${ds.children.map(render_block) |> Str.join_with("")}</div>"
+            "<div${render_attrs(ds.attrs)}>${ds.contents.map(render_block) |> Str.join_with("")}</div>"
         Table(ts) => {
             caption = if ts.caption.is_empty() "" else "<caption>${escape(ts.caption)}</caption>"
             align = ts.align.map(render_align)
@@ -326,7 +317,7 @@ render_block = |b|
         BlockQuote(bqs) =>
             "<blockquote>${bqs.contents.map(render_block) |> Str.join_with("")}</blockquote>"
         Pre(ps) =>
-            "<pre>${render_inlines(ps.children)}</pre>"
+            "<pre>${render_inlines(ps.contents)}</pre>"
         Rule(attrs) => "<hr${render_attrs(attrs)}>"
     }
 
@@ -355,50 +346,50 @@ render_attrs = |attrs| {
 expect "a &gt; b &amp; c &lt; d &quot;" == Text("a > b & c < d \"") |> render_inline()
 
 expect "<h1>Shopping List</h1>"
-    == Heading(HeadingSpec.{ level: H1, children: [Text("Shopping List")] })
+    == Heading(HeadingSpec.{ level: H1, contents: [Text("Shopping List")] })
         |> render_block()
 expect "<h1 id=\"id-list-heading\">Shopping List</h1>"
     == Heading(HeadingSpec.{
         attrs: { id: "id-list-heading" },
         level: H1,
-        children: [Text("Shopping List")]
+        contents: [Text("Shopping List")]
     }) |> render_block()
-expect "<p></p>" == Paragraph(ParagraphSpec.{ children: [] }) |> render_block()
+expect "<p></p>" == Paragraph(InlinesSpec.{ contents: [] }) |> render_block()
 expect "<p>Shopping List</p>"
-    == Paragraph(ParagraphSpec.{ children: [Text("Shopping List")] })
+    == Paragraph(InlinesSpec.{ contents: [Text("Shopping List")] })
         |> render_block()
 expect "<p class=\"todo\">Shopping List</p>"
-    == Paragraph(ParagraphSpec.{
+    == Paragraph(InlinesSpec.{
         attrs: { classes: ["todo"] },
-        children: [Text("Shopping List")]
+        contents: [Text("Shopping List")]
     }) |> render_block()
 expect "<p>Shopping List</p>"
-    == Paragraph(ParagraphSpec.{
+    == Paragraph(InlinesSpec.{
         attrs: { classes: [""] },
-        children: [Text("Shopping List")]
+        contents: [Text("Shopping List")]
     }) |> render_block()
 expect "<p class=\"todo b&quot;ox\">Shopping List</p>"
-    == Paragraph(ParagraphSpec.{
+    == Paragraph(InlinesSpec.{
         attrs: { classes: ["todo", "b\"ox"] },
-        children: [Text("Shopping List")]
+        contents: [Text("Shopping List")]
     }) |> render_block()
 expect {
     expected = "<p id=\"id-list-&quot;heading&quot;\" class=\"todo\">Shopping List</p>"
     actual = Paragraph(
-        ParagraphSpec.{
+        InlinesSpec.{
             attrs: {
                 id: "id-list-\"heading\"",
                 classes: ["todo"],
             },
-            children: [Text("Shopping List")]
+            contents: [Text("Shopping List")]
         }) |> render_block()
     actual == expected
 }
 expect "<p>Shopping <strong>List</strong></p>"
-    == Paragraph(ParagraphSpec.{ children: [Text("Shopping "), Strong([Text("List")])] })
+    == Paragraph(InlinesSpec.{ contents: [Text("Shopping "), Strong([Text("List")])] })
         |> render_block()
 expect "<p>Shopping <strong><strong>List</strong></strong></p>"
-    == Paragraph(ParagraphSpec.{ children: [Text("Shopping "), Strong([Strong([Text("List")])])] })
+    == Paragraph(InlinesSpec.{ contents: [Text("Shopping "), Strong([Strong([Text("List")])])] })
         |> render_block()
 
 expect \\<!DOCTYPE html>
@@ -414,7 +405,7 @@ expect {
     expected = \\<!DOCTYPE html>
                \\<html lang="en"><head><meta charset="utf-8"><title>abcde</title></head><body><h1>Shopping List</h1></body></html>
     actual = Doc.with_head({ title: "abcde" })
-        .with_body([Heading({ level: H1, children: [Text("Shopping List")] })])
+        .with_body([Heading({ level: H1, contents: [Text("Shopping List")] })])
         .render()
     actual == expected
 }
@@ -426,9 +417,9 @@ expect \\<!DOCTYPE html>
 
 expect "<body><p>first</p><p>second</p><p>third</p></body>"
     == [
-        Paragraph({ children: [Text("first")] }),
-        Paragraph({ children: [Text("second")] }),
-        Paragraph({ children: [Text("third")] }),
+        Paragraph({ contents: [Text("first")] }),
+        Paragraph({ contents: [Text("second")] }),
+        Paragraph({ contents: [Text("third")] }),
     ] |> render_body()
 
 expect "<a href=\"https://example.com/one%20mor%C3%A9%3F%23%2F%25/two.html\">The Link</a>"
@@ -541,7 +532,7 @@ expect {
 expect {
     expected = "<ol><li><p>first</p></li></ol>"
     actual = OrderedList({
-        items: [Blocks([Paragraph({ children: [Text("first")] })])]
+        items: [Blocks([Paragraph({ contents: [Text("first")] })])]
     }) |> render_block()
     actual == expected
 }
@@ -612,14 +603,14 @@ expect {
 expect "<em>some text</em>" == Emphasis([Text("some text")]) |> render_inline()
 expect {
     expected = "<div><h1>some text</h1></div>"
-    actual = Div({ children: [Heading({ level: H1, children: [Text("some text")] }) ]})
+    actual = Div({ contents: [Heading({ level: H1, contents: [Text("some text")] }) ]})
         |> render_block()
     actual == expected
 }
 expect {
     expected = "<div id=\"1234\" class=\"one two\"><h1>some text</h1></div>"
     actual = Div({
-        children: [Heading({ level: H1, children: [Text("some text")] })],
+        contents: [Heading({ level: H1, contents: [Text("some text")] })],
         attrs: { id: "1234", classes: ["one", "two"] },
     }) |> render_block()
     actual == expected
@@ -689,7 +680,7 @@ expect "<table></table>" == TableSpec.{
 } |> Table |> render_block
 expect {
     expected = "<table><tbody><tr><td class=\"align-left\"><p>some text</p></td></tr></tbody></table>"
-    p = Paragraph(ParagraphSpec.{ children: [Text("some text")] })
+    p = Paragraph(InlinesSpec.{ contents: [Text("some text")] })
     bs = Blocks([p])
     ts = TableSpec.new(TableConfig.{ data: [
         [bs],
@@ -699,19 +690,19 @@ expect {
 }
 
 expect "<blockquote></blockquote>" == BlockQuoteSpec.{ contents: [] } |> BlockQuote |> render_block
-expect "<code></code>" == CodeSpec.{ contents: [] } |> Code |> render_inline
+expect "<code></code>" == InlinesSpec.{ contents: [] } |> Code |> render_inline
 expect "<code>1234 <strong>hello</strong>()</code>"
-    == CodeSpec.{ contents: [Text("1234 "), Strong([Text("hello")]), Text("()")] }|> Code |> render_inline
+    == InlinesSpec.{ contents: [Text("1234 "), Strong([Text("hello")]), Text("()")] }|> Code |> render_inline
 expect "<code class=\"roc\">1234 <strong>hello</strong>()</code>"
-    == CodeSpec.{
+    == InlinesSpec.{
         attrs: Attrs.{ classes: ["roc"] },
         contents: [Text("1234 "), Strong([Text("hello")]), Text("()")],
     }|> Code |> render_inline
 
-expect "<pre></pre>" == ParagraphSpec.{ children: [] } |> Pre |> render_block
+expect "<pre></pre>" == InlinesSpec.{ contents: [] } |> Pre |> render_block
 expect "<pre><code class=\"roc\">1234 <strong>hello</strong>()</code></pre>"
-    == ParagraphSpec.{ children: [
-        CodeSpec.{
+    == InlinesSpec.{ contents: [
+        InlinesSpec.{
             attrs: Attrs.{ classes: ["roc"] },
             contents: [Text("1234 "), Strong([Text("hello")]), Text("()")],
         }|> Code
@@ -720,8 +711,8 @@ expect "<pre><code class=\"roc\">1234 <strong>hello</strong>()</code></pre>"
 expect "<hr>" == Attrs.{} |> Rule |> render_block
 expect "<hr class=\"pretty\">" == Attrs.{ classes: ["pretty"] } |> Rule |> render_block
 expect "<div><p>A</p><hr><p>B</p></div>"
-    == Div(DivSpec.{ children: [
-        Paragraph(ParagraphSpec.{ children: [Text("A")] }),
+    == Div(BlocksSpec.{ contents: [
+        Paragraph(InlinesSpec.{ contents: [Text("A")] }),
         Rule(Attrs.{}),
-        Paragraph(ParagraphSpec.{ children: [Text("B")] }),
+        Paragraph(InlinesSpec.{ contents: [Text("B")] }),
     ] }) |> render_block

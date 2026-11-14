@@ -27,18 +27,18 @@ add_block = |doc, b|
 block : Markdown -> Html.Block
 block = |md|
     match md {
-        Heading(h) => Heading(Html.HeadingSpec.{ level: heading_level(h.level), children: h.content.map(inline) })
-        Paragraph(cs) => Paragraph(Html.ParagraphSpec.{ children: cs.map(inline) })
+        Heading(h) => Heading(Html.HeadingSpec.{ level: heading_level(h.level), contents: h.content.map(inline) })
+        Paragraph(cs) => Paragraph(Html.InlinesSpec.{ contents: cs.map(inline) })
         ListBlock(lb) => {
-            list_spec = Html.ListSpec.{ items: lb.items.map(|i| i.blocks.map(block) |> Blocks) }
+            list_spec = Html.ContentSpec.{ items: lb.items.map(|i| i.blocks.map(block) |> Blocks) }
             match lb.kind {
                 Unordered => UnorderedList(list_spec)
                 Ordered(_) => OrderedList(list_spec)
             }
         }
         Blockquote(bs) => BlockQuote(Html.BlockQuoteSpec.{ contents: bs.map(block) })
-        Code(cs) => Pre(Html.ParagraphSpec.{ children: [
-            Code(Html.CodeSpec.{
+        Code(cs) => Pre(Html.InlinesSpec.{ contents: [
+            Code(Html.InlinesSpec.{
                 attrs: Html.Attrs.{ classes: ["language-${cs.info.split_first(" ").ok_or({ before: "", after: "" }).before}"] },
                 contents: [Text(cs.pre)],
             }),
@@ -56,7 +56,7 @@ block = |md|
         }
         b => {
             dbg b
-            Paragraph(Html.ParagraphSpec.{ children: [Text("Todo")] })
+            Paragraph(Html.InlinesSpec.{ contents: [Text("Todo")] })
         }
     }
 
@@ -103,7 +103,7 @@ expect {
         lang: "en",
         head: Html.Doc.Head.{ title: "My Shopping List" },
         body: [
-            Heading(Html.HeadingSpec.{ level: H1, children: [Text("Shopping")] }),
+            Heading(Html.HeadingSpec.{ level: H1, contents: [Text("Shopping")] }),
         ],
     }
     md = "# Shopping"
@@ -116,8 +116,8 @@ expect {
         lang: "en",
         head: Html.Doc.Head.{ title: "My Shopping List" },
         body: [
-            Heading(Html.HeadingSpec.{ level: H1, children: [Text("Shopping")] }),
-            Paragraph(Html.ParagraphSpec.{ children: [Text("Buy these "), Strong([Text("today")]), Text(":")] }),
+            Heading(Html.HeadingSpec.{ level: H1, contents: [Text("Shopping")] }),
+            Paragraph(Html.InlinesSpec.{ contents: [Text("Buy these "), Strong([Text("today")]), Text(":")] }),
         ],
     }
     md = "# Shopping\n\nBuy these **today**:"
@@ -130,9 +130,9 @@ expect {
         lang: "en",
         head: Html.Doc.Head.{ title: "My Shopping List" },
         body: [
-            UnorderedList(Html.ListSpec.{ items: [
-                Blocks([Paragraph(Html.ParagraphSpec.{ children: [Text("apples")] })]),
-                Blocks([Paragraph(Html.ParagraphSpec.{ children: [Text("pears")] })]),
+            UnorderedList(Html.ContentSpec.{ items: [
+                Blocks([Paragraph(Html.InlinesSpec.{ contents: [Text("apples")] })]),
+                Blocks([Paragraph(Html.InlinesSpec.{ contents: [Text("pears")] })]),
             ] }),
         ],
     }
@@ -148,7 +148,7 @@ expect {
         head: Html.Doc.Head.{ title: "My Shopping List" },
         body: [
             BlockQuote(Html.BlockQuoteSpec.{ contents: [
-                Paragraph(Html.ParagraphSpec.{ children: [Text("apples\npears")] }),
+                Paragraph(Html.InlinesSpec.{ contents: [Text("apples\npears")] }),
             ] }),
         ],
     }
@@ -163,8 +163,8 @@ expect {
         lang: "en",
         head: Html.Doc.Head.{ title: "My Shopping List" },
         body: [
-            Pre(Html.ParagraphSpec.{ children: [
-                Code(Html.CodeSpec.{
+            Pre(Html.InlinesSpec.{ contents: [
+                Code(Html.InlinesSpec.{
                     attrs: Html.Attrs.{ classes: ["language-roc"] },
                     contents: [
                         Text(\\some_fn : Str, U64 -> Str
