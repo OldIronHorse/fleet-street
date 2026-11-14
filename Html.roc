@@ -64,7 +64,7 @@ Html := {}.{
                 Strong(cs) => Strong(cs.map(to_inline))
                 Emphasis(cs) => Emphasis(cs.map(to_inline))
                 Span(ss) => Span({ attrs: ss.attrs, contents: ss.contents.map(to_inline) })
-                Code(cs) => Code({ attrs: cs.attrs, contents: cs.contents.map(to_inline) })
+                Code(cs) => Code({ attrs: cs.attrs, content: cs.content })
                 Image(s) => Image(s)
             }
 

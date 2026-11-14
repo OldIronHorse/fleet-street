@@ -37,12 +37,15 @@ block = |md|
             }
         }
         Blockquote(bs) => BlockQuote(Html.BlocksSpec.{ contents: bs.map(block) })
-        Code(cs) => Pre(Html.InlinesSpec.{ contents: [
-            Code({
-                attrs: Html.Attrs.{ classes: ["language-${cs.info.split_first(" ").ok_or({ before: "", after: "" }).before}"] },
-                content: cs.pre,
-            }),
-        ] })
+        Code(cs) => {
+            classes = if cs.info.is_empty() [] else ["language-${cs.info.split_first(" ").ok_or({ before: "", after: "" }).before}"]
+            Pre(Html.InlinesSpec.{ contents: [
+                Code({
+                    attrs: Html.Attrs.{ classes },
+                    content: cs.pre,
+                }),
+            ] })
+        }
         ThematicBreak => Rule(Html.Attrs.{})
         Table(t) => {
             match Html.TableSpec.new(Html.TableConfig.{
@@ -178,6 +181,52 @@ expect {
          \\some_fn : Str, U64 -> Str
          \\some_fn = |s, n|
          \\    s.repeat(n)
+         \\```
+    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
+    actual.render() == expected.render()
+}
+
+expect {
+    expected = Html.Doc.{
+        lang: "en",
+        head: Html.Doc.Head.{ title: "My Shopping List" },
+        body: [
+            Pre(Html.InlinesSpec.{ contents: [
+                Code({
+                    attrs: Html.Attrs.{},
+                    content: \\some_fn : Str, U64 -> Str
+                             \\some_fn = |s, n|
+                             \\    s.repeat(n)
+                             \\
+                }),
+            ] }),
+        ],
+    }
+    md = \\```
+         \\some_fn : Str, U64 -> Str
+         \\some_fn = |s, n|
+         \\    s.repeat(n)
+         \\```
+    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
+    actual.render() == expected.render()
+}
+
+expect {
+    expected = Html.Doc.{
+        lang: "en",
+        head: Html.Doc.Head.{ title: "My Shopping List" },
+        body: [
+            Pre(Html.InlinesSpec.{ contents: [
+                Code({
+                    attrs: Html.Attrs.{ classes: ["language-roc"] },
+                    content: \\[a](http://x.com)
+                             \\
+                }),
+            ] }),
+        ],
+    }
+    md = \\```roc title="x"
+         \\[a](http://x.com)
          \\```
     actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
     actual.render() == expected.render()
