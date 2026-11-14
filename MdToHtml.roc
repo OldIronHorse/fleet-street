@@ -44,20 +44,29 @@ block = |md|
             }),
         ] })
         ThematicBreak => Rule(Html.Attrs.{})
-        Table(t) =>
-            # Table({ header: [[Text("Item")], [Text("Qty")]], align: [Left, Right], rows: [[[Text("pear")], [Text("2")]]] })
+        Table(t) => {
             match Html.TableSpec.new(Html.TableConfig.{
                 headers: t.header.map(|header| Inlines(header.map(|c| inline(c)))),
+                align: t.align.map(table_align),
                 data: t.rows.map(|row| row.map(|cell| Inlines(cell.map(|c| inline(c))))),
             }) {
                 Ok(ts) => Table(ts)
-                Err(e) =>
-                    Paragraph(Html.ParagraphSpec.{ children: [Text("Error: ${Str.inspect(e)}")] })
+                Err(_) => { crash "Unreachable: MdToHtml.block"} # the markdown parser pads/truncates rows as necessary
             }
+        }
         b => {
             dbg b
             Paragraph(Html.ParagraphSpec.{ children: [Text("Todo")] })
         }
+    }
+
+table_align : Markdown.Alignment -> Html.Alignment
+table_align = |a|
+    match a {
+        Default => Left
+        Left => Left
+        Center => Center
+        Right => Right
     }
 
 heading_level : Markdown.Level -> Html.Level
@@ -174,8 +183,6 @@ expect {
          \\    s.repeat(n)
          \\```
     actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
-    dbg actual.render()
-    dbg expected.render()
     actual.render() == expected.render()
 }
 
@@ -203,6 +210,7 @@ expect {
         body: [
             Table(Html.TableSpec.new(Html.TableConfig.{
                 headers: [Inlines([Text("Item")]), Inlines([Text("Qty")])],
+                align: [Left, Right],
                 data: [
                     [Inlines([Text("pear")]), Inlines([Text("2")])],
                 ],
@@ -212,6 +220,48 @@ expect {
     md = \\| Item | Qty |
          \\| :--- | --: |
          \\| pear | 2 |
+    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
+    actual.render() == expected.render()
+}
+
+expect {
+    expected = Html.Doc.{
+        lang: "en",
+        head: Html.Doc.Head.{ title: "My Shopping List" },
+        body: [
+            Table(Html.TableSpec.new(Html.TableConfig.{
+                headers: [Inlines([Text("Item")]), Inlines([Text("Qty")])],
+                align: [Left, Right],
+                data: [
+                    [Inlines([Text("pear")]), Inlines([Text("2")])],
+                ],
+            })?),
+        ],
+    }
+    md = \\| Item | Qty |
+         \\| :--- | --: |
+         \\| pear | 2 | 3 |
+    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
+    actual.render() == expected.render()
+}
+
+expect {
+    expected = Html.Doc.{
+        lang: "en",
+        head: Html.Doc.Head.{ title: "My Shopping List" },
+        body: [
+            Table(Html.TableSpec.new(Html.TableConfig.{
+                headers: [Inlines([Text("Item")]), Inlines([Text("Qty")])],
+                align: [Left, Right],
+                data: [
+                    [Inlines([Text("pear")]), Inlines([Text("")])],
+                ],
+            })?),
+        ],
+    }
+    md = \\| Item | Qty |
+         \\| :--- | --: |
+         \\| pear |
     actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
     actual.render() == expected.render()
 }

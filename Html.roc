@@ -114,10 +114,13 @@ Html := {}.{
             this.contents == that.contents
     }
 
+    Alignment : [Left, Center, Right]
+
     TableConfig := {
         attrs: Attrs ?? Attrs.{},
         caption: Str ?? "",
         headers: List(Content) ?? [],
+        align: List(Alignment)?? [],
         data: List(List(Content)),
     }
 
@@ -126,6 +129,7 @@ Html := {}.{
         attrs: Attrs,
         caption: Str,
         headers: List(Content),
+        align: List(Alignment),
         data: List(List(Content)),
     }.{
         new : TableConfig -> Try(TableSpec, [RaggedRows])
@@ -135,13 +139,16 @@ Html := {}.{
                 [first, .. as rest] => rest.all(|row| row.len() == first.len())
                 [] => True
             }
-            if rectangular
+            if rectangular {
+                width = rows.first().ok_or([]).len()
                 Ok({
                     attrs: tc.attrs,
                     caption: tc.caption,
+                    align: tc.align.concat(List.repeat(Left, width)).take_first(width),
                     headers: tc.headers,
                     data: tc.data,
                 })
+            }
             else
                 Err(RaggedRows)
         }
@@ -310,8 +317,9 @@ render_block = |b|
             "<div${render_attrs(ds.attrs)}>${ds.children.map(render_block) |> Str.join_with("")}</div>"
         Table(ts) => {
             caption = if ts.caption.is_empty() "" else "<caption>${escape(ts.caption)}</caption>"
-            hs = ts.headers.map(|h| "<th scope=\"col\">${render_content(h)}</th>")
-            rows = ts.data.map(render_table_row)
+            align = ts.align.map(render_align)
+            hs = ts.headers.map2(align, |h, a| "<th scope=\"col\"${a}>${render_content(h)}</th>")
+            rows = ts.data.map(|r| render_table_row(r, align))
             body = if rows.is_empty() "" else "<tbody>${rows |> Str.join_with("")}</tbody>"
             "<table${render_attrs(ts.attrs)}>${caption}${if hs.is_empty() "" else "<thead><tr>".concat(hs |> Str.join_with("")).concat("</tr></thead>")}${body}</table>"
         }
@@ -322,9 +330,17 @@ render_block = |b|
         Rule(attrs) => "<hr${render_attrs(attrs)}>"
     }
 
-render_table_row : List(Content) -> Str
-render_table_row = |cells|
-    "<tr>${cells.map(|c| "<td>".concat(render_content(c)).concat("</td>")) |> Str.join_with("")}</tr>"
+render_align : [Left, Center, Right] -> Str
+render_align = |a|
+    match a {
+        Left => " class=\"align-left\""
+        Right => " class=\"align-right\""
+        Center => " class=\"align-center\""
+    }
+
+render_table_row : List(Content), List(Str) -> Str
+render_table_row = |cells, align|
+    "<tr>${cells.map2(align, |c, a| "<td".concat(a).concat(">").concat(render_content(c)).concat("</td>")) |> Str.join_with("")}</tr>"
 
 render_attrs : Attrs -> Str
 render_attrs = |attrs| {
@@ -609,7 +625,7 @@ expect {
     actual == expected
 }
 expect {
-    expected = "<table><tbody><tr><td>1</td><td>2</td></tr><tr><td>3</td><td>4</td></tr></tbody></table>"
+    expected = "<table><tbody><tr><td class=\"align-left\">1</td><td class=\"align-left\">2</td></tr><tr><td class=\"align-left\">3</td><td class=\"align-left\">4</td></tr></tbody></table>"
     table_spec = TableSpec.new({
         data: [
             [Inlines([Text("1")]), Inlines([Text("2")])],
@@ -620,7 +636,7 @@ expect {
     actual == expected
 }
 expect {
-    expected = "<table><caption>a caption</caption><thead><tr><th scope=\"col\">one</th><th scope=\"col\">two</th></tr></thead></table>"
+    expected = "<table><caption>a caption</caption><thead><tr><th scope=\"col\" class=\"align-left\">one</th><th scope=\"col\" class=\"align-left\">two</th></tr></thead></table>"
     table_spec = TableSpec.new({
         caption: "a caption",
         headers: [Inlines([Text("one")]), Inlines([Text("two")])],
@@ -630,7 +646,7 @@ expect {
     actual == expected
 }
 expect {
-    expected = "<table><caption>a &lt;caption&gt;</caption><thead><tr><th scope=\"col\">one</th><th scope=\"col\">two</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr><tr><td>3</td><td>4</td></tr></tbody></table>"
+    expected = "<table><caption>a &lt;caption&gt;</caption><thead><tr><th scope=\"col\" class=\"align-left\">one</th><th scope=\"col\" class=\"align-left\">two</th></tr></thead><tbody><tr><td class=\"align-left\">1</td><td class=\"align-left\">2</td></tr><tr><td class=\"align-left\">3</td><td class=\"align-left\">4</td></tr></tbody></table>"
     table_spec = TableSpec.new({
         caption: "a <caption>",
         headers: [Inlines([Text("one")]), Inlines([Text("two")])],
@@ -643,7 +659,7 @@ expect {
     actual == expected
 }
 expect {
-    expected = "<table id=\"1234\" class=\"here there\"><thead><tr><th scope=\"col\">one&lt;</th><th scope=\"col\">two</th></tr></thead><tbody><tr><td>1&gt;5</td><td>2</td></tr><tr><td>3</td><td>4</td></tr></tbody></table>"
+    expected = "<table id=\"1234\" class=\"here there\"><thead><tr><th scope=\"col\" class=\"align-left\">one&lt;</th><th scope=\"col\" class=\"align-left\">two</th></tr></thead><tbody><tr><td class=\"align-left\">1&gt;5</td><td class=\"align-left\">2</td></tr><tr><td class=\"align-left\">3</td><td class=\"align-left\">4</td></tr></tbody></table>"
     table_spec = TableSpec.new({
         attrs: { id: "1234", classes: ["here", "there"] },
         headers: [Inlines([Text("one<")]), Inlines([Text("two")])],
@@ -664,9 +680,15 @@ expect Err(RaggedRows) == TableSpec.new({
 })
 
 expect "<table></table>" == TableSpec.new({ data: [] })? |> Table |> render_block
-expect "<table></table>" == TableSpec.{ attrs: Attrs.{}, caption: "", headers: [], data: [] } |> Table |> render_block
+expect "<table></table>" == TableSpec.{
+    attrs: Attrs.{},
+    caption: "",
+    headers: [],
+    align: [],
+    data: [],
+} |> Table |> render_block
 expect {
-    expected = "<table><tbody><tr><td><p>some text</p></td></tr></tbody></table>"
+    expected = "<table><tbody><tr><td class=\"align-left\"><p>some text</p></td></tr></tbody></table>"
     p = Paragraph(ParagraphSpec.{ children: [Text("some text")] })
     bs = Blocks([p])
     ts = TableSpec.new(TableConfig.{ data: [
