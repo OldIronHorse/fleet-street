@@ -220,6 +220,7 @@ expect {
                 Code({
                     attrs: Html.Attrs.{ classes: ["language-roc"] },
                     content: \\[a](http://x.com)
+                             \\<&>
                              \\
                 }),
             ] }),
@@ -227,6 +228,7 @@ expect {
     }
     md = \\```roc title="x"
          \\[a](http://x.com)
+         \\<&>
          \\```
     actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
     actual.render() == expected.render()

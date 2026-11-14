@@ -318,7 +318,7 @@ render_block = |b|
         BlockQuote(bqs) =>
             "<blockquote${render_attrs(bqs.attrs)}>${bqs.contents.map(render_block) |> Str.join_with("")}</blockquote>"
         Pre(ps) =>
-            "<pre>${render_inlines(ps.contents)}</pre>"
+            "<pre${render_attrs(ps.attrs)}>${render_inlines(ps.contents)}</pre>"
         Rule(attrs) => "<hr${render_attrs(attrs)}>"
     }
 
@@ -700,7 +700,12 @@ expect "<code class=\"roc\">1234 hello()</code>"
         content: "1234 hello()",
     }|> Code |> render_inline
 
-expect "<pre></pre>" == InlinesSpec.{ contents: [] } |> Pre |> render_block
+expect "<pre class=\"some\"></pre>" == InlinesSpec.{
+    attrs: Attrs.{
+        classes: ["some"],
+    },
+    contents: [],
+} |> Pre |> render_block
 expect "<pre><code class=\"roc\">1234 hello()</code></pre>"
     == InlinesSpec.{ contents: [
         {
