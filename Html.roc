@@ -474,6 +474,14 @@ expect {
     }) |> render_inline()
     actual == expected
 }
+expect {
+    expected = "<a href=\"../docs/comp.html#max\"><code>max : a, a -&gt; a where [is_gt : a, a -&gt; Bool]</code></a>"
+    actual = Link({
+        url: Relative({ path: ["..", "docs", "comp.html"], fragment: Ok("max") }),
+        label: [Code({ attrs: Attrs.{}, content: "max : a, a -> a where [is_gt : a, a -> Bool]" })],
+    }) |> render_inline()
+    actual == expected
+}
 
 expect {
     expected = "<ul></ul>"
@@ -648,6 +656,31 @@ expect {
         data: [
             [Inlines([Text("1")]), Inlines([Text("2")])],
             [Inlines([Text("3")]), Inlines([Text("4")])],
+        ],
+    })?
+    actual = Table(table_spec) |> render_block()
+    actual == expected
+}
+expect {
+    expected = "<table><caption>all alignments</caption><thead><tr><th scope=\"col\">Default</th><th scope=\"col\" class=\"align-left\">Left</th><th scope=\"col\" class=\"align-center\">Center</th><th scope=\"col\" class=\"align-right\">Right</th><th scope=\"col\">None</th></tr></thead><tbody><tr><td>default</td><td class=\"align-left\">left</td><td class=\"align-center\">center</td><td class=\"align-right\">right</td><td>none</td></tr></tbody></table>"
+    table_spec = TableSpec.new({
+        caption: "all alignments",
+        headers: [
+            Inlines([Text("Default")]),
+            Inlines([Text("Left")]),
+            Inlines([Text("Center")]),
+            Inlines([Text("Right")]),
+            Inlines([Text("None")]),
+        ],
+        align: [Default, Left, Center, Right],
+        data: [
+            [
+                Inlines([Text("default")]),
+                Inlines([Text("left")]),
+                Inlines([Text("center")]),
+                Inlines([Text("right")]),
+                Inlines([Text("none")]),
+            ],
         ],
     })?
     actual = Table(table_spec) |> render_block()
