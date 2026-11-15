@@ -760,3 +760,13 @@ expect "<div><p>A</p><hr><p>B</p></div>"
     ] }) |> render_block
 
 expect "<span></span>" == InlinesSpec.{ contents: [] } |> Span |> render_inline
+expect "<span class=\"outer\"><span class=\"inner\">some text</span></span>"
+    == InlinesSpec.{
+        attrs: Attrs.{ classes: ["outer"] },
+        contents: [
+            Span(InlinesSpec.{
+                attrs: Attrs.{ classes: ["inner"] },
+                contents: [Text("some text")],
+            })
+        ],
+    } |> Span |> render_inline
