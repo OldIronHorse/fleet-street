@@ -1,39 +1,58 @@
-Url := [
-    Http(HttpSpec),
-    MailTo(MailToSpec),
-    Relative(RelativeSpec),
-].{
-    is_eq : Url, Url -> Bool
-    is_eq = |this, that|
-        match (this, that) {
-            (Http(a), Http(b)) => a == b
-            (MailTo(a), MailTo(b)) => a == b
-            (Relative(a), Relative(b)) => a == b
-            _ => False
-        }
+Url := [].{
+    Url := [
+        Http(HttpSpec),
+        MailTo(MailToSpec),
+        Relative(RelativeSpec),
+    ].{
+        is_eq : Url, Url -> Bool
+        is_eq = |this, that|
+            match (this, that) {
+                (Http(a), Http(b)) => a == b
+                (MailTo(a), MailTo(b)) => a == b
+                (Relative(a), Relative(b)) => a == b
+                _ => False
+            }
 
-    to_str : Url -> Str
-    to_str = |url|
-        match url {
-            Http(hs) => {
-                port = hs.port.map_ok(|p| ":${p.to_str()}").ok_or("")
-                "${hs.scheme.to_str()}://${hs.host.to_str()}${port}/${path(hs.path)}${query(hs.query)}${fragment(hs.fragment)}"
+        to_str : Url -> Str
+        to_str = |url|
+            match url {
+                Http(hs) => {
+                    port = hs.port.map_ok(|p| ":${p.to_str()}").ok_or("")
+                    "${hs.scheme.to_str()}://${hs.host.to_str()}${port}/${path(hs.path)}${query(hs.query)}${fragment(hs.fragment)}"
+                }
+                MailTo(mt) => {
+                    subject = if mt.subject.is_empty() [] else ["subject=${url_encode_(mt.subject)}"]
+                    body = if mt.body.is_empty() [] else ["body=${url_encode_(mt.body)}"]
+                    cc = if mt.cc.is_empty() [] else ["cc=${mt.cc.map(Address.url_encode) |> Str.join_with(",")}"]
+                    bcc = if mt.bcc.is_empty() []  else ["bcc=${mt.bcc.map(Address.url_encode) |> Str.join_with(",")}"]
+                    args = [subject, body, cc, bcc]
+                        .join()
+                        |> Str.join_with("&")
+                    "mailto:${mt.to.url_encode()}${if args.is_empty() "" else args.with_prefix("?")}"
+                }
+                Relative(rs) => {
+                    root = if rs.root "/" else ""
+                    "${root}${path(rs.path)}${query(rs.query)}${fragment(rs.fragment)}"
+                }
             }
-            MailTo(mt) => {
-                subject = if mt.subject.is_empty() [] else ["subject=${url_encode(mt.subject)}"]
-                body = if mt.body.is_empty() [] else ["body=${url_encode(mt.body)}"]
-                cc = if mt.cc.is_empty() [] else ["cc=${mt.cc.map(Address.url_encode) |> Str.join_with(",")}"]
-                bcc = if mt.bcc.is_empty() []  else ["bcc=${mt.bcc.map(Address.url_encode) |> Str.join_with(",")}"]
-                args = [subject, body, cc, bcc]
-                    .join()
-                    |> Str.join_with("&")
-                "mailto:${mt.to.url_encode()}${if args.is_empty() "" else args.with_prefix("?")}"
+
+        from_str : Str -> Try(Url, _)
+        from_str = |s|
+            match s {
+                "${scheme}://${_}" =>
+                    match scheme {
+                        "http" | "https" =>
+                            s |> HttpSpec.from_str()? |> Http |> Ok
+                        _ =>
+                            Err(Oops)
+                    }
+                rel =>
+                    match rel.split_on("/") {
+                        ["", .. as rest] => Ok(Relative(RelativeSpec.{ root: True, path: rest.drop_if(Str.is_empty) }))
+                        p => Ok(Relative(RelativeSpec.{ path: p.drop_if(Str.is_empty) }))
+                    }
             }
-            Relative(rs) => {
-                root = if rs.root "/" else ""
-                "${root}${path(rs.path)}${query(rs.query)}${fragment(rs.fragment)}"
-            }
-        }
+    }
 
     Host :: { name: Str }.{
         whitelist = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-"
@@ -80,6 +99,26 @@ Url := [
                 and this.scheme == that.scheme
                 and this.query == that.query
                 and this.fragment ==  that.fragment
+
+        from_str : Str -> Try(HttpSpec, _)
+        from_str = |s|
+            match s {
+                "${scheme}://${rest}" =>
+                    HttpSpec.{
+                        scheme: Scheme.from_str(scheme)?,
+                        host: match rest {
+                            "${host}:${_}" | "${host}/${_}" | host =>
+                                Host.from_str(host)?
+                        },
+                        path: match rest {
+                            "${_host}/${path_}?{_query}"
+                            | "${_host}/${path_}#{_fragment}"
+                            | "${_host}/${path_}" => Ok(path_.split_on("/"))
+                            _ => Err(InvalidPath(s))
+                        }?,
+                    } |> Ok
+                _ => Err(NoScheme(s))
+            }
     }
 
     Scheme := [Http, Https].{
@@ -95,12 +134,20 @@ Url := [
                 (Http, Http) | (Https, Https) => True
                 _ => False
             }
+
+        from_str : Str -> Try(Scheme, _)
+        from_str = |s|
+            match s {
+                "http" => Ok(Http)
+                "https" => Ok(Https)
+                _ => Err(InvalidScheme(s))
+            }
     }
 
     QueryParam := { key: Str, value: Str }.{
         url_encode : QueryParam -> Str
         url_encode = |qp|
-            "${url_encode(qp.key)}=${url_encode(qp.value)}"
+            "${url_encode_(qp.key)}=${url_encode_(qp.value)}"
 
         is_eq = |this, that|
             this.key == that.key
@@ -110,7 +157,7 @@ Url := [
     Address := { recipient: Str, domain: Host }.{
         url_encode : Address -> Str
         url_encode = |addr|
-            "${url_encode(addr.recipient)}@${url_encode(addr.domain.to_str())}"
+            "${url_encode_(addr.recipient)}@${url_encode_(addr.domain.to_str())}"
 
         is_eq = |this, that|
             this.recipient == that.recipient
@@ -148,7 +195,7 @@ Url := [
 
 path = |ps|
     ps |> drop_while(Str.is_empty)
-    .map(url_encode)
+    .map(url_encode_)
     |> Str.join_with("/")
 
 query = |qs|
@@ -160,7 +207,7 @@ query = |qs|
             .with_prefix("?")
 
 fragment = |fg|
-    fg.map_ok(|f| "#${url_encode(f)}").ok_or("")
+    fg.map_ok(|f| "#${url_encode_(f)}").ok_or("")
 
 drop_while : List(a), (a -> Bool) -> List(a)
 drop_while = |l, f|
@@ -173,8 +220,8 @@ url_whitelist = "-._~abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456
     .to_utf8()
     |> Set.from_list()
 
-url_encode : Str -> Str
-url_encode = |s|
+url_encode_ : Str -> Str
+url_encode_ = |s|
     s.to_utf8()
         .map(|c|
             if url_whitelist.contains(c)
@@ -329,7 +376,7 @@ expect Err(InvalidHost) == Host.from_str("exa/mple.com")
 expect Err(InvalidHost) == Host.from_str("exa:mple.com")
 expect Err(InvalidHost) == Host.from_str("exaémple.com")
 
-expect "%0A" == url_encode("\n")
+expect "%0A" == url_encode_("\n")
 
 expect "about.html" == Relative({ path: ["", "", "about.html"] }) |> Url.to_str()
 expect "about/" == Relative({ path: ["", "", "about", ""] }) |> Url.to_str()
@@ -378,3 +425,29 @@ expect {
     }) |> Url.to_str()
     actual == expected
 }
+
+expect Relative(RelativeSpec.{ path: ["simple.css"] }) == Url.from_str("simple.css")?
+expect Relative(RelativeSpec.{ path: ["one", "two", "simple.css"] }) == Url.from_str("one/two/simple.css")?
+expect Relative(RelativeSpec.{ root: True, path: ["one", "two", "simple.css"] }) == Url.from_str("/one/two/simple.css")?
+expect Relative(RelativeSpec.{ path: ["one", "two", "simple.css"] }) == Url.from_str("one/two//simple.css")?
+expect Relative(RelativeSpec.{ root: True, path: ["one", "two", "simple.css"] }) == Url.from_str("//one//two/simple.css")?
+
+expect {
+    expected = Http({ scheme: Http, host: Host.from_str("example.com")?, path: ["one", "two", "three", "four.html"] })
+    actual = Url.from_str("http://example.com/one/two/three/four.html")?
+    actual == expected
+}
+
+expect {
+    expected = Http({
+        scheme: Http,
+        host: Host.from_str("example.com")?,
+        port: Ok(80),
+        path: ["one", "two", "three", "four.html"]
+    })
+    actual = Url.from_str("http://example.com:80/one/two/three/four.html")?
+    dbg actual
+    dbg expected
+    actual == expected
+}
+

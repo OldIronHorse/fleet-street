@@ -1,10 +1,11 @@
 import parser.Markdown
 import Html
+import Url
 
 MdToHtml := {}.{
-    doc : List(Markdown), Str -> Html.Doc
-    doc = |blocks, title| {
-        blocks.fold(Html.Doc.with_head(Html.Doc.Head.{ title }), add_block)
+    doc : List(Markdown), Str, List(Url) -> Html.Doc
+    doc = |blocks, title, css| {
+        blocks.fold(Html.Doc.with_head(Html.Head.{ title, css }), add_block)
     }
 }
 
@@ -104,34 +105,34 @@ expect {
 expect {
     expected = Html.Doc.{
         lang: "en",
-        head: Html.Doc.Head.{ title: "My Shopping List" },
+        head: Html.Head.{ title: "My Shopping List" },
         body: [
             Heading(Html.HeadingSpec.{ level: H1, contents: [Text("Shopping")] }),
         ],
     }
     md = "# Shopping"
-    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
+    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List", [])
     actual.render() == expected.render()
 }
 
 expect {
     expected = Html.Doc.{
         lang: "en",
-        head: Html.Doc.Head.{ title: "My Shopping List" },
+        head: Html.Head.{ title: "My Shopping List" },
         body: [
             Heading(Html.HeadingSpec.{ level: H1, contents: [Text("Shopping")] }),
             Paragraph(Html.InlinesSpec.{ contents: [Text("Buy these "), Strong([Text("today")]), Text(":")] }),
         ],
     }
     md = "# Shopping\n\nBuy these **today**:"
-    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
+    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List", [])
     actual.render() == expected.render()
 }
 
 expect {
     expected = Html.Doc.{
         lang: "en",
-        head: Html.Doc.Head.{ title: "My Shopping List" },
+        head: Html.Head.{ title: "My Shopping List" },
         body: [
             UnorderedList(Html.ContentSpec.{ items: [
                 Blocks([Paragraph(Html.InlinesSpec.{ contents: [Text("apples")] })]),
@@ -141,14 +142,14 @@ expect {
     }
     md = \\- apples
          \\- pears
-    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
+    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List", [])
     actual.render() == expected.render()
 }
 
 expect {
     expected = Html.Doc.{
         lang: "en",
-        head: Html.Doc.Head.{ title: "My Shopping List" },
+        head: Html.Head.{ title: "My Shopping List" },
         body: [
             BlockQuote(Html.BlocksSpec.{ contents: [
                 Paragraph(Html.InlinesSpec.{ contents: [Text("apples\npears")] }),
@@ -157,14 +158,14 @@ expect {
     }
     md = \\> apples
          \\> pears
-    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
+    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List", [])
     actual.render() == expected.render()
 }
 
 expect {
     expected = Html.Doc.{
         lang: "en",
-        head: Html.Doc.Head.{ title: "My Shopping List" },
+        head: Html.Head.{ title: "My Shopping List" },
         body: [
             Pre(Html.InlinesSpec.{ contents: [
                 Code({
@@ -182,14 +183,14 @@ expect {
          \\some_fn = |s, n|
          \\    s.repeat(n)
          \\```
-    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
+    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List", [])
     actual.render() == expected.render()
 }
 
 expect {
     expected = Html.Doc.{
         lang: "en",
-        head: Html.Doc.Head.{ title: "My Shopping List" },
+        head: Html.Head.{ title: "My Shopping List" },
         body: [
             Pre(Html.InlinesSpec.{ contents: [
                 Code({
@@ -207,14 +208,14 @@ expect {
          \\some_fn = |s, n|
          \\    s.repeat(n)
          \\```
-    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
+    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List", [])
     actual.render() == expected.render()
 }
 
 expect {
     expected = Html.Doc.{
         lang: "en",
-        head: Html.Doc.Head.{ title: "My Shopping List" },
+        head: Html.Head.{ title: "My Shopping List" },
         body: [
             Pre(Html.InlinesSpec.{ contents: [
                 Code({
@@ -230,14 +231,14 @@ expect {
          \\[a](http://x.com)
          \\<&>
          \\```
-    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
+    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List", [])
     actual.render() == expected.render()
 }
 
 expect {
     expected = Html.Doc.{
         lang: "en",
-        head: Html.Doc.Head.{ title: "My Shopping List" },
+        head: Html.Head.{ title: "My Shopping List" },
         body: [
             Rule(Html.Attrs.{}),
             Rule(Html.Attrs.{}),
@@ -247,35 +248,35 @@ expect {
     md = \\***
          \\---
          \\___
-    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
+    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List", [])
     actual.render() == expected.render()
 }
 
 expect {
     expected = Html.Doc.{
         lang: "en",
-        head: Html.Doc.Head.{ title: "My Shopping List" },
+        head: Html.Head.{ title: "My Shopping List" },
         body: [
             Table(Html.TableSpec.new(Html.TableConfig.{
-                headers: [Inlines([Text("Item")]), Inlines([Text("Qty")])],
-                align: [Left, Default],
+                headers: [Inlines([Text("Item")]), Inlines([Text("Qty")]), Inlines([Text("Price")])],
+                align: [Left, Default, Center],
                 data: [
-                    [Inlines([Text("pear")]), Inlines([Text("2")])],
+                    [Inlines([Text("pear")]), Inlines([Text("2")]), Inlines([Text("£0.39")])],
                 ],
             })?),
         ],
     }
-    md = \\| Item | Qty |
-         \\| :--- | --- |
-         \\| pear | 2 |
-    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
+    md = \\| Item | Qty | Price |
+         \\| :--- | --- | :---: |
+         \\| pear | 2 | £0.39 |
+    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List", [])
     actual.render() == expected.render()
 }
 
 expect {
     expected = Html.Doc.{
         lang: "en",
-        head: Html.Doc.Head.{ title: "My Shopping List" },
+        head: Html.Head.{ title: "My Shopping List" },
         body: [
             Table(Html.TableSpec.new(Html.TableConfig.{
                 headers: [Inlines([Text("Item")]), Inlines([Text("Qty")])],
@@ -289,14 +290,14 @@ expect {
     md = \\| Item | Qty |
          \\| :--- | --: |
          \\| pear | 2 |
-    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
+    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List", [])
     actual.render() == expected.render()
 }
 
 expect {
     expected = Html.Doc.{
         lang: "en",
-        head: Html.Doc.Head.{ title: "My Shopping List" },
+        head: Html.Head.{ title: "My Shopping List" },
         body: [
             Table(Html.TableSpec.new(Html.TableConfig.{
                 headers: [Inlines([Text("Item")]), Inlines([Text("Qty")])],
@@ -310,14 +311,14 @@ expect {
     md = \\| Item | Qty |
          \\| :--- | --: |
          \\| pear | 2 | 3 |
-    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
+    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List", [])
     actual.render() == expected.render()
 }
 
 expect {
     expected = Html.Doc.{
         lang: "en",
-        head: Html.Doc.Head.{ title: "My Shopping List" },
+        head: Html.Head.{ title: "My Shopping List" },
         body: [
             Table(Html.TableSpec.new(Html.TableConfig.{
                 headers: [Inlines([Text("Item")]), Inlines([Text("Qty")])],
@@ -331,6 +332,6 @@ expect {
     md = \\| Item | Qty |
          \\| :--- | --: |
          \\| pear |
-    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List")
+    actual = md |> Markdown.parse_str() |> MdToHtml.doc("My Shopping List", [])
     actual.render() == expected.render()
 }

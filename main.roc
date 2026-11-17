@@ -4,8 +4,8 @@
 ## Generate static websites from markdwon
 ##
 app [main!] {
-    cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.28.0/2yhxoR7cZPSYbyUzPWULFw8AA6QEcdsgFNRmzu7pZbst.tar.zst",
-    parser: "https://github.com/lukewilliamboswell/roc-parser/releases/download/5.0.0/GWrbcSuoXstBeasuzyfMuXe99zFZFLgBhoWavjA7rteZ.tar.zst",
+    cli: platform "https://github.com/roc-lang/basic-cli/releases/download/0.28.1/7brgwR8YUqfeGrkdfF1V4GPPN7DnP7ftqub9KcrTEZtr.tar.zst",
+    parser: "https://github.com/lukewilliamboswell/roc-parser/releases/download/6.0.0-rc.3/FTL1xt1rA9nXzoYkhFAW9yF75Kn52bS3cpBr7wZNfPq2.tar.zst",
     weaver: "https://github.com/lukewilliamboswell/weaver/releases/download/0.10.2/7CdYzjBAJmprmnK45oTpmH6BXt76ZASN2Ck5uZQEoWsK.tar.zst",
 }
 
@@ -18,6 +18,7 @@ import weaver.Cli
 import weaver.Opt
 import parser.Markdown
 import parser.Yaml
+import Url
 import Html
 import MdToHtml
 
@@ -31,38 +32,55 @@ main! = |args| {
         Ok(parsed_args) => {
             input_path = parsed_args.input |> OsStr.from_str() |> Path.from_os_str()
             output_path = parsed_args.output |> OsStr.from_str() |> Path.from_os_str()
-            if relative_to(input_path.canonicalize!()?, output_path.canonicalize!()?).is_ok() {
-                _ = Stderr.line!("Error: output cannot be a subdirectory of input.")
-                Err(Exit(5))
-            } else {
-                files = Stream.custom([input_path], Err(Unknown), expand_or_return!)
-                index = build_index!(files)
-                if index.io_failed.is_empty() {
-                    _ = Stdout.line!("Pages: ${index.pages.len().to_str()}, Assets: ${index.assets.len().to_str()}, Skipped: ${index.skipped.len().to_str()}")
-                    match copy_assets!(index.assets, input_path, output_path) {
-                        Err(e) => {
-                            _ = Stderr.line!("Error copying assets: ${Str.inspect(e)}")
-                            Err(Exit(6))
-                        }
-                        _ =>
-                            match make_html!(index, input_path, output_path) {
-                                Err(e) => {
-                                    _ = Stderr.line!("Error: ${Str.inspect(e)}")
-                                    Err(Exit(3))
-                                }
-                                Ok([]) => Ok({})
-                                Ok(errors) => {
-                                    _ = Stderr.line!("Error: ${Str.inspect(errors)}")
-                                    Err(Exit(4))
+            match (output_path.create_all!(),
+                input_path.canonicalize!(),
+                output_path.canonicalize!()) {
+                    (Err(e), _, _) => {
+                        _ = Stderr.line!("Error: failed to create output directory: ${Str.inspect(e)}")
+                        Err(Exit(7))
+                    }
+                    (_, Err(e), _) => {
+                        _ = Stderr.line!("Error: failed to canonicalize input directory: ${Str.inspect(e)}")
+                        Err(Exit(8))
+                    }
+                    (_, _, Err(e)) => {
+                        _ = Stderr.line!("Error: failed to canonicalize output directory: ${Str.inspect(e)}")
+                        Err(Exit(9))
+                    }
+                    (Ok(_), Ok(input_c), Ok(output_c)) =>
+                        if relative_to(input_c, output_c).is_ok() {
+                            _ = Stderr.line!("Error: output cannot be a subdirectory of input.")
+                            Err(Exit(5))
+                        } else {
+                            files = Stream.custom([input_path], Err(Unknown), expand_or_return!)
+                            index = build_index!(files)
+                            if index.io_failed.is_empty() {
+                                _ = Stdout.line!("Pages: ${index.pages.len().to_str()}, Assets: ${index.assets.len().to_str()}, Skipped: ${index.skipped.len().to_str()}")
+                                match copy_assets!(index.assets, input_path, output_path) {
+                                    Err(e) => {
+                                        _ = Stderr.line!("Error copying assets: ${Str.inspect(e)}")
+                                        Err(Exit(6))
+                                    }
+                                    _ =>
+                                        match make_html!(index, input_path, output_path) {
+                                            Err(e) => {
+                                                _ = Stderr.line!("Error: ${Str.inspect(e)}")
+                                                Err(Exit(3))
+                                            }
+                                            Ok([]) => Ok({})
+                                            Ok(errors) => {
+                                                _ = Stderr.line!("Error: ${Str.inspect(errors)}")
+                                                Err(Exit(4))
+                                            }
+                                        }
                                 }
                             }
-                    }
+                            else {
+                                _ = Stderr.line!("IO failures: ${Str.inspect(index.io_failed)}")
+                                Err(Exit(2))
+                            }
+                        }
                 }
-                else {
-                    _ = Stderr.line!("IO failures: ${Str.inspect(index.io_failed)}")
-                    Err(Exit(2))
-                }
-            }
         }
         Err(Help(msg)) => Stdout.line!(msg)
         Err(Version(msg)) => Stdout.line!(msg)
@@ -96,31 +114,40 @@ make_html! = |index, input_path, output_path|
     index.pages.to_list().fold_try!([], |errors, (path, page_type)|
         match make_output_path(path, input_path, output_path) {
             Ok(p) => {
-                _ = ensure_creatable!(p)?
-                match page_type {
-                    Page(frontmatter) => {
-                        match p.write_utf8!(
-                            path.read_utf8!()?
-                            |> Markdown.parse_str()
-                            |> MdToHtml.doc(frontmatter.title)
-                            .render()) {
-                                Ok({}) => Ok(errors)
-                                Err(e) => Ok(errors.append(e))
+                match ensure_creatable!(p) {
+                    Ok(_) =>
+                        match page_type {
+                            Page(frontmatter) => {
+                                match p.write_utf8!(
+                                    path.read_utf8!()?
+                                    |> Markdown.parse_str()
+                                    |> MdToHtml.doc(frontmatter.title, [Url.Url.from_str(frontmatter.css)?])
+                                    .render()) {
+                                        Ok({}) => Ok(errors)
+                                        Err(e) => Ok(errors.append((path, e)))
+                                }
+                            }
+                            NoFrontmatter =>
+                                match p.write_utf8!(
+                                    path.read_utf8!()?
+                                    |> Markdown.parse_str()
+                                    |> MdToHtml.doc("", [])
+                                    .render()) {
+                                        Ok({}) => Ok(errors)
+                                        Err(e) => Ok(errors.append((path, e)))
+                                }
+                            FrontmatterError(e) =>
+                                match e {
+                                    InvalidYaml(e_) =>
+                                        Ok(errors.append((path, InvalidFrontmatterYaml(e_))))
+                                    MissingRequiredField(e_) =>
+                                        Ok(errors.append((path, MissingFrontmatterField(e_))))
+                                }
                         }
-                    }
-                    NoFrontmatter =>
-                        match p.write_utf8!(
-                            path.read_utf8!()?
-                            |> Markdown.parse_str()
-                            |> MdToHtml.doc("")
-                            .render()) {
-                                Ok({}) => Ok(errors)
-                                Err(e) => Ok(errors.append(e))
-                        }
-                    _ => Ok(errors.append(FileTypeError(path)))
+                    _ => Ok(errors.append((path, CreationError)))
                 }
             }
-            _ => Ok(errors.append(PathError(path)))
+            _ => Ok(errors.append((path, PathError)))
         })
 
 make_output_path : Path, Path, Path -> Try(Path, _)
@@ -178,7 +205,7 @@ cli_parser =
 
 Index := {
     assets: List(Path) ?? [],
-    pages: Dict(Path, [Page(Frontmatter), NoFrontmatter, InvalidYaml(Yaml.Error), MissingRequiredField(Str)]) ?? Dict.empty(),
+    pages: Dict(Path, [Page(Frontmatter), NoFrontmatter, FrontmatterError([InvalidYaml(Yaml.Error), MissingRequiredField(Str)])]) ?? Dict.empty(),
     skipped: List((Path, Reason)) ?? [],
     io_failed: List((Path, IOErr)) ??[],
 }
@@ -198,7 +225,7 @@ update_index! = |idx, p|
                         Ok(fm) =>
                             { ..idx, pages: idx.pages.insert(path, match load_frontmatter(fm) {
                                 Ok(c) => Page(c)
-                                Err(e) => e
+                                Err(e) => FrontmatterError(e)
                             }) }
                         Err(Missing) =>
                             { ..idx, pages: idx.pages.insert(path, NoFrontmatter) }
@@ -223,6 +250,7 @@ load_frontmatter = |s|
 
 Frontmatter : {
     title: Str,
+    css: Str,
     tags: List(Str)
 }
 
@@ -316,6 +344,8 @@ expect Ok("one/1.md") == relative_to("./test/md/", "./test/md/one/1.md")
 expect Ok("one/1.md") == relative_to("test/md/", "test/md/one/1.md")
 expect Ok("1.md") == relative_to(".", "./1.md")
 expect Err(NotAChild) == relative_to("./test/md/", "./test/one/1.md")
+expect Ok("") == relative_to("/a/md", "/a/md")      # output == input must trip the guard
+expect Err(NotAChild) == relative_to("/a/md", "/a/md2")
 
 parts : Path -> Try(List(Str), _)
 parts = |path|

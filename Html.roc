@@ -6,12 +6,6 @@ Html := {}.{
         head: Head,
         body: List(Block) ?? []
     }.{
-        Head := { title: Str }.{
-            render : Head -> Str
-            render = |h|
-                "<head><meta charset=\"utf-8\"><title>${escape(h.title)}</title></head>"
-        }
-
         with_head : Head -> Doc
         with_head = |head|
             Doc.{ head }
@@ -25,6 +19,12 @@ Html := {}.{
         render : Doc -> Str
         render = |doc|
             "<!DOCTYPE html>\n<html lang=\"${escape(doc.lang)}\">${doc.head.render()}${render_body(doc.body)}</html>"
+    }
+
+    Head := { title: Str, css: List(Url) ?? []  }.{
+        render : Head -> Str
+        render = |h|
+            "<head><meta charset=\"utf-8\"><title>${escape(h.title)}</title>${render_css_links(h.css)}</head>"
     }
 
     Inline := [
@@ -246,6 +246,11 @@ Html := {}.{
     }
 }
 
+render_css_links : List(Url) -> Str
+render_css_links = |urls|
+    urls.map(|url| "<link rel=\"stylesheet\" href=\"${url.to_str()}\">")
+        |> Str.join_with("")
+
 render_body : List(Block) -> Str
 render_body = |body|
     "<body>${body.map(render_block) |> Str.join_with("")}</body>"
@@ -410,6 +415,13 @@ expect {
                \\<html lang="en"><head><meta charset="utf-8"><title>abcde</title></head><body><h1>Shopping List</h1></body></html>
     actual = Doc.with_head({ title: "abcde" })
         .with_body([Heading({ level: H1, contents: [Text("Shopping List")] })])
+        .render()
+    actual == expected
+}
+expect {
+    expected = \\<!DOCTYPE html>
+               \\<html lang="en"><head><meta charset="utf-8"><title>abcde</title><link rel="stylesheet" href="../styles/simple.css"></head><body></body></html>
+    actual = Doc.with_head({ title: "abcde", css: [Relative({ path: ["..", "styles", "simple.css"] })] })
         .render()
     actual == expected
 }
