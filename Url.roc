@@ -110,12 +110,21 @@ Url := [].{
                             "${host}:${_}" | "${host}/${_}" | host =>
                                 Host.from_str(host)?
                         },
+                        port: match rest {
+                            "${_}:${port}/${_}" | "${_}:${port}" =>
+                                U16.from_str(port)? |> Ok
+                            _ => Err(None)
+                        }
                         path: match rest {
-                            "${_host}/${path_}?{_query}"
-                            | "${_host}/${path_}#{_fragment}"
+                            "${_host}/${path_}?${_}"
+                            | "${_host}/${path_}#${_}"
                             | "${_host}/${path_}" => Ok(path_.split_on("/"))
                             _ => Err(InvalidPath(s))
                         }?,
+                        fragment: match rest {
+                            "${_}#${fragment_}" => Ok(fragment_)
+                            _ => Err(None)
+                        },
                     } |> Ok
                 _ => Err(NoScheme(s))
             }
@@ -442,12 +451,32 @@ expect {
     expected = Http({
         scheme: Http,
         host: Host.from_str("example.com")?,
+        path: ["one", "two", "three", "four.html"]
+    })
+    actual = Url.from_str("http://example.com/one/two/three/four.html")?
+    actual == expected
+}
+
+expect {
+    expected = Http({
+        scheme: Http,
+        host: Host.from_str("example.com")?,
         port: Ok(80),
         path: ["one", "two", "three", "four.html"]
     })
     actual = Url.from_str("http://example.com:80/one/two/three/four.html")?
+    actual == expected
+}
+
+expect {
+    expected = Http({
+        scheme: Http,
+        host: Host.from_str("example.com")?,
+        path: ["one", "two", "three", "four.html"],
+        fragment: Ok("section1"),
+    })
+    actual = Url.from_str("http://example.com/one/two/three/four.html#section1")?
     dbg actual
     dbg expected
     actual == expected
 }
-
