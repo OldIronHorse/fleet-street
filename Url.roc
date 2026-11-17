@@ -476,6 +476,17 @@ expect {
         fragment: Ok("section1"),
     })
     actual = Url.from_str("http://example.com/one/two/three/four.html#section1")?
+    actual == expected
+}
+
+expect {
+    expected = Http({
+        host: Host.from_str("example.com")?,
+        path: ["one", "two", "three", "four.html"],
+        query: [{ key: "name", value: "Joe Bl&ggs" }, { key: "age", value: "4#5" }],
+        fragment: Ok("intro"),
+    })
+    actual = Url.from_str("https://example.com/one/two/three/four.html?name=Joe%20Bl%26ggs&age=4%235#intro")?
     dbg actual
     dbg expected
     actual == expected
