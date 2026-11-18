@@ -39,17 +39,19 @@ Url := [].{
         from_str : Str -> Try(Url, _)
         from_str = |s|
             match s {
-                "${scheme}://${_}" =>
+                "${scheme}:${_}" =>
                     match scheme {
-                        "http" | "https" =>
+                        "http" | "https" | "HTTP" | "HTTPS" =>
                             s |> HttpSpec.from_str()? |> Http |> Ok
+                        "mailto" | "MAILTO" =>
+                            s |> MailToSpec.from_str()? |> MailTo |> Ok
                         _ =>
-                            Err(Oops)
+                            Err(UnsupportedScheme(scheme))
                     }
                 rel =>
                     match rel.split_on("/") {
                         ["", .. as rest] => Ok(Relative(RelativeSpec.{ root: True, path: rest.drop_if(Str.is_empty) }))
-                        p => Ok(Relative(RelativeSpec.{ path: p.drop_if(Str.is_empty) }))
+                        p => Ok(Relative(RelativeSpec.{ path: p.drop_if(Str.is_empty).map_try(url_decode)? }))
                     }
             }
     }
@@ -103,29 +105,29 @@ Url := [].{
         from_str : Str -> Try(HttpSpec, _)
         from_str = |s|
             match s {
-                "${scheme}://${rest}" =>
+                "${scheme}://${rest}" => {
+                    { before: apq, after: fragment_ }
+                        = rest.split_first("#").ok_or({ before: rest, after: ""})
+                    { before: ap, after: query_ }
+                        = apq.split_first("?").ok_or({ before: apq, after: ""})
+                    { before: a, after: path_ }
+                        = ap.split_first("/").ok_or({ before: ap, after: ""})
+                    { before: host, after: port }
+                        = a.split_first(":").ok_or( {before: a, after: ""})
                     HttpSpec.{
                         scheme: Scheme.from_str(scheme)?,
-                        host: match rest {
-                            "${host}:${_}" | "${host}/${_}" | host =>
-                                Host.from_str(host)?
-                        },
-                        port: match rest {
-                            "${_}:${port}/${_}" | "${_}:${port}" =>
-                                U16.from_str(port)? |> Ok
-                            _ => Err(None)
-                        }
-                        path: match rest {
-                            "${_host}/${path_}?${_}"
-                            | "${_host}/${path_}#${_}"
-                            | "${_host}/${path_}" => Ok(path_.split_on("/"))
-                            _ => Err(InvalidPath(s))
-                        }?,
-                        fragment: match rest {
-                            "${_}#${fragment_}" => Ok(fragment_)
-                            _ => Err(None)
-                        },
+                        host: Host.from_str(host)?,
+                        port: if port.is_empty() Err(None) else Ok(U16.from_str(port)?),
+                        path: path_.split_on("/")
+                            .map_try(url_decode)?
+                            .drop_if(Str.is_empty),
+                        fragment: if fragment_.is_empty() Err(None) else Ok(url_decode(fragment_)?),
+                        query: query_
+                            .split_on("&")
+                            .drop_if(Str.is_empty)
+                            .map_try(QueryParam.from_str)?,
                     } |> Ok
+                }
                 _ => Err(NoScheme(s))
             }
     }
@@ -147,8 +149,8 @@ Url := [].{
         from_str : Str -> Try(Scheme, _)
         from_str = |s|
             match s {
-                "http" => Ok(Http)
-                "https" => Ok(Https)
+                "http" | "HTTP" => Ok(Http)
+                "https" | "HTTPS" => Ok(Https)
                 _ => Err(InvalidScheme(s))
             }
     }
@@ -161,6 +163,15 @@ Url := [].{
         is_eq = |this, that|
             this.key == that.key
                 and this.value == that.value
+
+        from_str : Str -> Try(QueryParam, _)
+        from_str = |s| 
+            match s {
+                "${key}=${value}" =>
+                    Ok({ key: url_decode(key)?, value: url_decode(value)? })
+                _ =>
+                    Ok({ key: url_decode(s)?, value: "" })
+            }
     }
 
     Address := { recipient: Str, domain: Host }.{
@@ -171,6 +182,13 @@ Url := [].{
         is_eq = |this, that|
             this.recipient == that.recipient
                 and this.domain == that.domain
+
+        from_str : Str -> Try(Address, _)
+        from_str = |s|
+            match s {
+                "${recipient}@${domain}" => Ok({ recipient, domain: Host.from_str(domain)? })
+                _ => Err(InvalidAddress(s))
+            }   
     }
 
     MailToSpec := {
@@ -186,6 +204,33 @@ Url := [].{
                 and this.body == that.body
                 and this.cc == that.cc
                 and this.bcc == that.bcc
+
+        from_str : Str -> Try(MailToSpec, _)
+        from_str = |s| {
+            { before: sa, after: params } = s.split_first("?").ok_or({ before:s, after: "" })
+            { before: _scheme, after: address } = sa.split_first(":")?
+            params.split_on("&")
+                .drop_if(Str.is_empty)
+                .map_try(QueryParam.from_str)?
+                .fold_try(MailToSpec.{ to: Address.from_str(address)? }, |spec, p|
+                    match p.key {
+                        "subject" => { ..spec, subject: p.value } |> Ok
+                        "body" => { ..spec, body: p.value } |> Ok
+                        "cc" =>
+                            { ..spec,
+                                cc: p.value.split_on(",")
+                                    .drop_if(Str.is_empty)
+                                    .map_try(Address.from_str)?
+                            } |> Ok
+                        "bcc" =>
+                            { ..spec,
+                                bcc: p.value.split_on(",")
+                                    .drop_if(Str.is_empty)
+                                    .map_try(Address.from_str)?
+                            } |> Ok
+                        _ => Err(UnknownParam(p))
+                    })
+        }
     }
 
     RelativeSpec := {
@@ -245,11 +290,46 @@ hex_digit = |n| hex_digits.get(n.to_u64()).ok_or("0")
 as_hex : U8 -> Str
 as_hex = |n| "${n.div_by(16) |> hex_digit()}${n.rem_by(16) |> hex_digit()}"
 
+url_decode : Str -> Try(Str, _)
+url_decode = |s| {
+    decode = |cs, decoded|
+        match cs {
+            [] => Ok(decoded)
+            ['%', h, l, .. as rest] =>
+                decode(rest, decoded.append(from_hex(h, l)?))
+            ['%', ..] => Err(InvalidUrlEncoding(s))
+            [c, .. as rest]=>
+                decode(rest, decoded.append(c))
+        }
+
+    s.to_utf8() |> decode([])? |> Str.from_utf8()
+}
+
+hex_ds = "0123456789ABCDEF".to_utf8()
+hex_d = |c|
+    Ok(hex_ds.find_first_index(|d| d == c)?.to_u8_try()?)
+
+from_hex : U8, U8 -> Try(U8, _)
+from_hex = |h, l|
+    Ok(hex_d(h)? * 16 + hex_d(l)?)
+
+expect 0 == from_hex('0', '0')?
+expect 10 == from_hex('0', 'A')?
+expect 15 == from_hex('0', 'F')?
+expect 16 == from_hex('1', '0')?
+expect 255 == from_hex('F', 'F')?
+
 expect "00" == as_hex(0)
 expect "0A" == as_hex(10)
 expect "0F" == as_hex(15)
 expect "10" == as_hex(16)
 expect "FF" == as_hex(255)
+
+expect {
+    expected = "Joe Bl&ggs"
+    actual = url_decode("Joe%20Bl%26ggs")?
+    actual == expected
+}
 
 expect "http://example.com/one/two/three/four.html"
     == Http({ scheme: Http, host: Host.from_str("example.com")?, path: ["one", "two", "three", "four.html"] })
@@ -436,10 +516,78 @@ expect {
 }
 
 expect Relative(RelativeSpec.{ path: ["simple.css"] }) == Url.from_str("simple.css")?
+expect Relative(RelativeSpec.{ path: ["my file.html"] }) == Url.from_str("my%20file.html")?
 expect Relative(RelativeSpec.{ path: ["one", "two", "simple.css"] }) == Url.from_str("one/two/simple.css")?
 expect Relative(RelativeSpec.{ root: True, path: ["one", "two", "simple.css"] }) == Url.from_str("/one/two/simple.css")?
 expect Relative(RelativeSpec.{ path: ["one", "two", "simple.css"] }) == Url.from_str("one/two//simple.css")?
 expect Relative(RelativeSpec.{ root: True, path: ["one", "two", "simple.css"] }) == Url.from_str("//one//two/simple.css")?
+
+expect {
+    expected = Http({ scheme: Http, host: Host.from_str("example.com")?, path: [] })
+    actual = Url.from_str("http://example.com")?
+    actual == expected
+}
+
+expect {
+    expected = Http({ scheme: Http, host: Host.from_str("example.com")?, path: [] })
+    actual = Url.from_str("http://example.com/")?
+    actual == expected
+}
+
+expect {
+    expected = Http({ 
+        scheme: Http,
+        host: Host.from_str("example.com")?,
+        path: [],
+        query: [{ key: "key", value: "value" }],
+    })
+    actual = Url.from_str("http://example.com?key=value")?
+    actual == expected
+}
+
+expect {
+    expected = Http({ 
+        scheme: Http,
+        host: Host.from_str("example.com")?,
+        path: [],
+        query: [{ key: "key", value: "value" }],
+    })
+    actual = Url.from_str("http://example.com/?key=value")?
+    actual == expected
+}
+
+expect {
+    expected = Http({ 
+        scheme: Http,
+        host: Host.from_str("example.com")?,
+        path: [],
+        fragment: Ok("section1")
+    })
+    actual = Url.from_str("http://example.com/#section1")?
+    actual == expected
+}
+
+expect {
+    expected = Http({ 
+        scheme: Http,
+        host: Host.from_str("example.com")?,
+        path: [],
+        fragment: Ok("section1")
+    })
+    actual = Url.from_str("http://example.com#section1")?
+    actual == expected
+}
+
+expect {
+    expected = Http({ 
+        scheme: Http,
+        host: Host.from_str("example.com")?,
+        path: [],
+        fragment: Ok("section?1")
+    })
+    actual = Url.from_str("http://example.com#section?1")?
+    actual == expected
+}
 
 expect {
     expected = Http({ scheme: Http, host: Host.from_str("example.com")?, path: ["one", "two", "three", "four.html"] })
@@ -487,7 +635,32 @@ expect {
         fragment: Ok("intro"),
     })
     actual = Url.from_str("https://example.com/one/two/three/four.html?name=Joe%20Bl%26ggs&age=4%235#intro")?
-    dbg actual
-    dbg expected
+    actual == expected
+}
+
+expect {
+    expected = MailTo({
+        to: { recipient: "someone", domain: Url.Host.from_str("example.com")? },
+        subject: "Feedback Request & Link",
+    })
+    actual = Url.from_str("mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link")?
+    actual == expected
+}
+
+expect {
+    expected = MailTo({
+        to: { recipient: "someone", domain: Url.Host.from_str("example.com")? },
+        subject: "Feedback Request & Link",
+        body: "Please provide feedback.",
+        cc: [
+            { recipient: "cc1", domain: Url.Host.from_str("elsewhere.com")? },
+            { recipient: "cc2", domain: Url.Host.from_str("example.com")? },
+        ],
+        bcc: [
+            { recipient: "bc1", domain: Url.Host.from_str("elsewhere.com")? },
+            { recipient: "bc2", domain: Url.Host.from_str("example.com")? },
+        ],
+    })
+    actual = Url.from_str("mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link&body=Please%20provide%20feedback.&cc=cc1@elsewhere.com,cc2@example.com&bcc=bc1@elsewhere.com,bc2@example.com")?
     actual == expected
 }

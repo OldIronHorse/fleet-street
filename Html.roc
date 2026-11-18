@@ -149,6 +149,7 @@ Html := {}.{
             this.attrs == that.attrs
                 and this.caption == that.caption
                 and this.headers == that.headers
+                and this.align == that.align
                 and this.data == that.data
     }
 
@@ -248,7 +249,7 @@ Html := {}.{
 
 render_css_links : List(Url) -> Str
 render_css_links = |urls|
-    urls.map(|url| "<link rel=\"stylesheet\" href=\"${url.to_str()}\">")
+    urls.map(|url| "<link rel=\"stylesheet\" href=\"${escape(url.to_str())}\">")
         |> Str.join_with("")
 
 render_body : List(Block) -> Str
