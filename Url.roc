@@ -48,22 +48,11 @@ Url := [].{
                         _ =>
                             Err(UnsupportedScheme(scheme))
                     }
-                rel => {
-                    { before: pq, after: fragment_}
-                        = rel.split_first("#").ok_or({ before: rel, after: "" })
-                    { before: p, after: query_}
-                        = pq.split_first("?").ok_or({ before: pq, after: "" })
-                    path_ = p.split_on("/")
-
-                    RelativeSpec.{
-                        root: path_.starts_with([""]),
-                        path: path_.drop_if(Str.is_empty).map_try(url_decode)?,
-                        query: query_.split_on("&")
-                            .drop_if(Str.is_empty)
-                            .map_try(QueryParam.from_str)?,
-                        fragment: if fragment_.is_empty() Err(None) else Ok(fragment_)
-                    } |> Relative |> Ok
-                }
+                rel =>
+                    if rel.is_empty()
+                        Err(EmptyUrl)
+                    else
+                        RelativeSpec.from_str(rel)? |> Relative |> Ok
             }
     }
 
@@ -255,6 +244,26 @@ Url := [].{
                 and this.path == that.path
                 and this.fragment == that.fragment
                 and this.query == that.query
+
+        from_str : Str -> Try(RelativeSpec, _)
+        from_str = |s| {
+            { before: pq, after: fragment_}
+                = s.split_first("#").ok_or({ before: s, after: "" })
+            { before: p, after: query_}
+                = pq.split_first("?").ok_or({ before: pq, after: "" })
+            match p.split_on("/") {
+                ["", "", ..] => Err(InvalidPath(p))
+                path_ =>
+                    RelativeSpec.{
+                        root: path_.starts_with([""]),
+                        path: path_.drop_if(Str.is_empty).map_try(url_decode)?,
+                        query: query_.split_on("&")
+                            .drop_if(Str.is_empty)
+                            .map_try(QueryParam.from_str)?,
+                        fragment: if fragment_.is_empty() Err(None) else Ok(fragment_)
+                    } |> Ok
+            }
+        }
     }
 }
 
@@ -685,3 +694,8 @@ expect {
     actual = Url.from_str("mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link&body=Please%20provide%20feedback.&cc=cc1@elsewhere.com,cc2@example.com&bcc=bc1@elsewhere.com,bc2@example.com")?
     actual == expected
 }
+
+expect Err(UnsupportedScheme("javascript")) == Url.from_str("javascript:alert(1)")
+expect Err(UnsupportedScheme("data")) == Url.from_str("data:text/html,x")
+expect Err(EmptyUrl) == Url.from_str("")
+expect Err(InvalidPath("//evil.com/x")) == Url.from_str("//evil.com/x")
