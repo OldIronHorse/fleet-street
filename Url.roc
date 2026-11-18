@@ -520,7 +520,13 @@ expect Relative(RelativeSpec.{ path: ["my file.html"] }) == Url.from_str("my%20f
 expect Relative(RelativeSpec.{ path: ["one", "two", "simple.css"] }) == Url.from_str("one/two/simple.css")?
 expect Relative(RelativeSpec.{ root: True, path: ["one", "two", "simple.css"] }) == Url.from_str("/one/two/simple.css")?
 expect Relative(RelativeSpec.{ path: ["one", "two", "simple.css"] }) == Url.from_str("one/two//simple.css")?
-expect Relative(RelativeSpec.{ root: True, path: ["one", "two", "simple.css"] }) == Url.from_str("//one//two/simple.css")?
+expect Relative(RelativeSpec.{ root: True, path: ["one", "two", "simple.css"] }) == Url.from_str("/one//two/simple.css")?
+expect Relative(RelativeSpec.{
+    root: True,
+    path: ["a"],
+    query: [QueryParam.{ key: "b", value: "c" }],
+    fragment: Ok(d),
+}) == Url.from_str("/a?b=c#d")?
 
 expect {
     expected = Http({ scheme: Http, host: Host.from_str("example.com")?, path: [] })
