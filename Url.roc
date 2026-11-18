@@ -48,11 +48,22 @@ Url := [].{
                         _ =>
                             Err(UnsupportedScheme(scheme))
                     }
-                rel =>
-                    match rel.split_on("/") {
-                        ["", .. as rest] => Ok(Relative(RelativeSpec.{ root: True, path: rest.drop_if(Str.is_empty) }))
-                        p => Ok(Relative(RelativeSpec.{ path: p.drop_if(Str.is_empty).map_try(url_decode)? }))
-                    }
+                rel => {
+                    { before: pq, after: fragment_}
+                        = rel.split_first("#").ok_or({ before: rel, after: "" })
+                    { before: p, after: query_}
+                        = pq.split_first("?").ok_or({ before: pq, after: "" })
+                    path_ = p.split_on("/")
+
+                    RelativeSpec.{
+                        root: path_.starts_with([""]),
+                        path: path_.drop_if(Str.is_empty).map_try(url_decode)?,
+                        query: query_.split_on("&")
+                            .drop_if(Str.is_empty)
+                            .map_try(QueryParam.from_str)?,
+                        fragment: if fragment_.is_empty() Err(None) else Ok(fragment_)
+                    } |> Relative |> Ok
+                }
             }
     }
 
@@ -521,12 +532,18 @@ expect Relative(RelativeSpec.{ path: ["one", "two", "simple.css"] }) == Url.from
 expect Relative(RelativeSpec.{ root: True, path: ["one", "two", "simple.css"] }) == Url.from_str("/one/two/simple.css")?
 expect Relative(RelativeSpec.{ path: ["one", "two", "simple.css"] }) == Url.from_str("one/two//simple.css")?
 expect Relative(RelativeSpec.{ root: True, path: ["one", "two", "simple.css"] }) == Url.from_str("/one//two/simple.css")?
-expect Relative(RelativeSpec.{
-    root: True,
-    path: ["a"],
-    query: [QueryParam.{ key: "b", value: "c" }],
-    fragment: Ok(d),
-}) == Url.from_str("/a?b=c#d")?
+expect {
+    expected = Relative(RelativeSpec.{
+        root: True,
+        path: ["a"],
+        query: [QueryParam.{ key: "b", value: "c" }],
+        fragment: Ok("d"),
+    })
+    actual = Url.from_str("/a?b=c#d")?
+    dbg actual
+    dbg expected
+    actual == expected
+}
 
 expect {
     expected = Http({ scheme: Http, host: Host.from_str("example.com")?, path: [] })
