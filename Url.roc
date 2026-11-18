@@ -540,8 +540,6 @@ expect {
         fragment: Ok("d"),
     })
     actual = Url.from_str("/a?b=c#d")?
-    dbg actual
-    dbg expected
     actual == expected
 }
 
