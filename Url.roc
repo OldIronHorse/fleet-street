@@ -303,18 +303,19 @@ Url := [].{
                 = s.split_first("#").ok_or({ before: s, after: "" })
             { before: p, after: query_}
                 = pq.split_first("?").ok_or({ before: pq, after: "" })
-            match p.split_on("/") {
-                ["", "", ..] => Err(InvalidPath(p))
-                path_ =>
-                    RelativeSpec.{
-                        root: p.starts_with("/"),
-                        path: path_.drop_if(Str.is_empty).map_try(url_decode)?,
-                        trailing: p.ends_with("/"),
-                        query: query_.split_on("&")
-                            .drop_if(Str.is_empty)
-                            .map_try(QueryParam.from_str)?,
-                        fragment: if fragment_.is_empty() Err(None) else Ok(url_decode(fragment_)?)
-                    } |> Ok
+            if p.starts_with("//")
+                Err(InvalidPath(p))
+            else {
+                path_ = p.split_on("/")
+                RelativeSpec.{
+                    root: p.starts_with("/"),
+                    path: path_.drop_if(Str.is_empty).map_try(url_decode)?,
+                    trailing: p.ends_with("/"),
+                    query: query_.split_on("&")
+                        .drop_if(Str.is_empty)
+                        .map_try(QueryParam.from_str)?,
+                    fragment: if fragment_.is_empty() Err(None) else Ok(url_decode(fragment_)?)
+                } |> Ok
             }
         }
     }
