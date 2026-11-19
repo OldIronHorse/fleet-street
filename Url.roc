@@ -18,7 +18,9 @@ Url := [].{
             match url {
                 Http(hs) => {
                     port = hs.port.map_ok(|p| ":${p.to_str()}").ok_or("")
-                    "${hs.scheme.to_str()}://${hs.host.to_str()}${port}/${path(hs.path)}${query(hs.query)}${fragment(hs.fragment)}"
+                    p = path(hs.path)
+                    path_ = if p.is_empty() "" else "/${p}"
+                    "${hs.scheme.to_str()}://${hs.host.to_str()}${port}${path_}${query(hs.query)}${fragment(hs.fragment)}"
                 }
                 MailTo(mt) => {
                     subject = if mt.subject.is_empty() [] else ["subject=${url_encode_(mt.subject)}"]
@@ -155,22 +157,29 @@ Url := [].{
             }
     }
 
-    QueryParam := { key: Str, value: Str }.{
+    QueryParam := [KeyValue(Str, Str), Key(Str)].{
         url_encode : QueryParam -> Str
-        url_encode = |qp|
-            "${url_encode_(qp.key)}=${url_encode_(qp.value)}"
-
-        is_eq = |this, that|
-            this.key == that.key
-                and this.value == that.value
+        url_encode =|q|
+            match q {
+                Key(k) => url_encode_(k)
+                KeyValue(k, v) => "${url_encode_(k)}=${url_encode_(v)}"
+            }
 
         from_str : Str -> Try(QueryParam, _)
-        from_str = |s| 
+        from_str = |s|
             match s {
                 "${key}=${value}" =>
-                    Ok({ key: url_decode(key)?, value: url_decode(value)? })
+                    Ok(KeyValue(url_decode(key)?, url_decode(value)?))
                 _ =>
-                    Ok({ key: url_decode(s)?, value: "" })
+                    Ok(Key(url_decode(s)?))
+            }
+
+        is_eq : QueryParam, QueryParam -> Bool
+        is_eq = |this, that|
+            match (this, that) {
+                (Key(a), Key(b)) => a == b
+                (KeyValue(ak, av), KeyValue(bk, bv)) => ak == bk and av == bv
+                _ => False
             }
     }
 
@@ -188,7 +197,7 @@ Url := [].{
             match s {
                 "${recipient}@${domain}" => Ok({ recipient, domain: Host.from_str(domain)? })
                 _ => Err(InvalidAddress(s))
-            }   
+            }
     }
 
     MailToSpec := {
@@ -213,18 +222,18 @@ Url := [].{
                 .drop_if(Str.is_empty)
                 .map_try(QueryParam.from_str)?
                 .fold_try(MailToSpec.{ to: Address.from_str(address)? }, |spec, p|
-                    match p.key {
-                        "subject" => { ..spec, subject: p.value } |> Ok
-                        "body" => { ..spec, body: p.value } |> Ok
-                        "cc" =>
+                    match p {
+                        KeyValue("subject", value) => { ..spec, subject: value } |> Ok
+                        KeyValue("body", value) => { ..spec, body: value } |> Ok
+                        KeyValue("cc", value) =>
                             { ..spec,
-                                cc: p.value.split_on(",")
+                                cc: value.split_on(",")
                                     .drop_if(Str.is_empty)
                                     .map_try(Address.from_str)?
                             } |> Ok
-                        "bcc" =>
+                        KeyValue("bcc", value) =>
                             { ..spec,
-                                bcc: p.value.split_on(",")
+                                bcc: value.split_on(",")
                                     .drop_if(Str.is_empty)
                                     .map_try(Address.from_str)?
                             } |> Ok
@@ -355,7 +364,7 @@ expect "http://example.com/one/two/three/four.html"
     == Http({ scheme: Http, host: Host.from_str("example.com")?, path: ["one", "two", "three", "four.html"] })
         |> Url.to_str()
 
-expect "https://example.com/"
+expect "https://example.com"
     == Http({ host: Host.from_str("example.com")? })
         |> Url.to_str()
 
@@ -399,14 +408,14 @@ expect "https://example.com/one/two/three/four.html?name=Joe%20Bl%26ggs&age=4%23
     == Http({
         host: Host.from_str("example.com")?,
         path: ["one", "two", "three", "four.html"],
-        query: [{ key: "name", value: "Joe Bl&ggs" }, { key: "age", value: "4#5" }],
+        query: [KeyValue("name", "Joe Bl&ggs"), KeyValue("age", "4#5")],
     }) |> Url.to_str()
 
 expect "https://example.com/one/two/three/four.html?name=Joe%20Bl%26ggs&age=4%235#intro"
     == Http({
         host: Host.from_str("example.com")?,
         path: ["one", "two", "three", "four.html"],
-        query: [{ key: "name", value: "Joe Bl&ggs" }, { key: "age", value: "4#5" }],
+        query: [KeyValue("name", "Joe Bl&ggs"), KeyValue("age", "4#5")],
         fragment: Ok("intro"),
     }) |> Url.to_str()
 
@@ -424,7 +433,7 @@ expect "https://example.com/one/two/three/"
         query: [],
     }) |> Url.to_str()
 
-expect "https://example.com/#intro"
+expect "https://example.com#intro"
     == Http({
         host: Host.from_str("example.com")?,
         fragment: Ok("intro")
@@ -499,13 +508,13 @@ expect "/" == Relative({ root: True }) |> Url.to_str()
 expect "" == Relative({}) |> Url.to_str()
 expect "?name=Joe%20Bl%26ggs&age=4%235"
     == Relative({
-        query: [{ key: "name", value: "Joe Bl&ggs" }, { key: "age", value: "4#5" }],
+        query: [KeyValue("name", "Joe Bl&ggs"), KeyValue("age", "4#5")],
     }) |> Url.to_str()
 expect "/?name=Joe%20Bl%26ggs&age=4%235#intro"
     == Relative({
         root: True,
         fragment: Ok("intro"),
-        query: [{ key: "name", value: "Joe Bl&ggs" }, { key: "age", value: "4#5" }],
+        query: [KeyValue("name", "Joe Bl&ggs"), KeyValue("age", "4#5")],
     }) |> Url.to_str()
 
 expect {
@@ -545,7 +554,7 @@ expect {
     expected = Relative(RelativeSpec.{
         root: True,
         path: ["a"],
-        query: [QueryParam.{ key: "b", value: "c" }],
+        query: [KeyValue("b", "c")],
         fragment: Ok("d"),
     })
     actual = Url.from_str("/a?b=c#d")?
@@ -569,7 +578,7 @@ expect {
         scheme: Http,
         host: Host.from_str("example.com")?,
         path: [],
-        query: [{ key: "key", value: "value" }],
+        query: [KeyValue("key", "value")],
     })
     actual = Url.from_str("http://example.com?key=value")?
     actual == expected
@@ -580,7 +589,7 @@ expect {
         scheme: Http,
         host: Host.from_str("example.com")?,
         path: [],
-        query: [{ key: "key", value: "value" }],
+        query: [KeyValue("key", "value")],
     })
     actual = Url.from_str("http://example.com/?key=value")?
     actual == expected
@@ -661,7 +670,7 @@ expect {
     expected = Http({
         host: Host.from_str("example.com")?,
         path: ["one", "two", "three", "four.html"],
-        query: [{ key: "name", value: "Joe Bl&ggs" }, { key: "age", value: "4#5" }],
+        query: [KeyValue("name", "Joe Bl&ggs"), KeyValue("age", "4#5")],
         fragment: Ok("intro"),
     })
     actual = Url.from_str("https://example.com/one/two/three/four.html?name=Joe%20Bl%26ggs&age=4%235#intro")?
@@ -699,3 +708,18 @@ expect Err(UnsupportedScheme("javascript")) == Url.from_str("javascript:alert(1)
 expect Err(UnsupportedScheme("data")) == Url.from_str("data:text/html,x")
 expect Err(EmptyUrl) == Url.from_str("")
 expect Err(InvalidPath("//evil.com/x")) == Url.from_str("//evil.com/x")
+
+urls = [
+    "http://example.com",
+    "http://example.com",
+    "http://example.com:80/index.html",
+    "http://example.com/index.html",
+    "http://example.com/one/index.html",
+    "http://example.com/one/index.html#section2",
+    "http://example.com/one/index.html?k=v&x=y",
+    "http://example.com/one/index.html?k",
+]
+
+expect {
+    urls.map_try(|u| Ok(u |> Url.from_str()?.to_str() == u))?.all(|b| b)
+}
