@@ -202,7 +202,8 @@ Url := [].{
         is_eq = |this, that|
             match (this, that) {
                 (Key(a), Key(b)) => a == b
-                (KeyValue(ak, av), KeyValue(bk, bv)) => ak == bk and av == bv
+                (KeyValue(ak, av), KeyValue(bk, bv)) =>
+                    ak.with_ascii_lowercased() == bk.with_ascii_lowercased() and av == bv
                 _ => False
             }
     }
@@ -261,7 +262,7 @@ Url := [].{
                                     .drop_if(Str.is_empty)
                                     .map_try(Address.from_str)?
                             } |> Ok
-                        _ => Err(UnknownParam(p))
+                        _ => Ok(spec) #ignore other params
                     })
         }
     }
@@ -354,16 +355,21 @@ url_decode = |s| {
             ['%', h, l, .. as rest] =>
                 decode(rest, decoded.append(from_hex(h, l)?))
             ['%', ..] => Err(InvalidUrlEncoding(s))
-            [c, .. as rest]=>
+            [c, .. as rest] =>
                 decode(rest, decoded.append(c))
         }
 
     s.to_utf8() |> decode([])? |> Str.from_utf8()
 }
 
-hex_ds = "0123456789ABCDEF".to_utf8()
+hex_ds = "0123456789ABCDEF"
+    .to_utf8()
+    .fold_with_index(Dict.empty(), |ds, c, i| ds.insert(c, i))
+    .insert_all("0123456789abcdef"
+        .to_utf8()
+        .fold_with_index(Dict.empty(), |ds, c, i| ds.insert(c, i)))
 hex_d = |c|
-    Ok(hex_ds.find_first_index(|d| d == c)?.to_u8_try()?)
+    Ok(hex_ds.get(c)?.to_u8_try()?)
 
 from_hex : U8, U8 -> Try(U8, _)
 from_hex = |h, l|
@@ -371,9 +377,14 @@ from_hex = |h, l|
 
 expect 0 == from_hex('0', '0')?
 expect 10 == from_hex('0', 'A')?
+expect 10 == from_hex('0', 'A')?
 expect 15 == from_hex('0', 'F')?
+expect 15 == from_hex('0', 'f')?
 expect 16 == from_hex('1', '0')?
 expect 255 == from_hex('F', 'F')?
+expect 255 == from_hex('F', 'f')?
+expect 255 == from_hex('f', 'F')?
+expect 255 == from_hex('f', 'f')?
 
 expect "00" == as_hex(0)
 expect "0A" == as_hex(10)
@@ -554,7 +565,7 @@ expect {
 }
 
 expect {
-    expected ="mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link&body=Please%20provide%20feedback.&cc=cc1@elsewhere.com,cc2@example.com&bcc=bc1@elsewhere.com,bc2@example.com"
+    expected ="mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link&body=Please%20provide%20feedback.&cc=cc1%40elsewhere.com,cc2%40example.com&bcc=bc1%40elsewhere.com,bc2%40example.com"
     actual = MailTo({
         to: { recipient: "someone", domain: Url.Host.from_str("example.com")? },
         subject: "Feedback Request & Link",
@@ -568,6 +579,8 @@ expect {
             { recipient: "bc2", domain: Url.Host.from_str("example.com")? },
         ],
     }) |> Url.to_str()
+    dbg actual
+    dbg expected
     actual == expected
 }
 
@@ -651,7 +664,7 @@ expect {
         path: [],
         fragment: Ok("section?1")
     })
-    actual = Url.from_str("http://example.com#section?1")?
+    actual = Url.from_str("http://example.com#section%3f1")?
     actual == expected
 }
 
@@ -732,6 +745,24 @@ expect {
 }
 
 expect {
+    expected = MailTo({
+        to: { recipient: "someone", domain: Url.Host.from_str("example.com")? },
+        subject: "Feedback Request & Link",
+        body: "Please provide feedback.",
+        cc: [
+            { recipient: "cc1", domain: Url.Host.from_str("elsewhere.com")? },
+            { recipient: "cc2", domain: Url.Host.from_str("example.com")? },
+        ],
+        bcc: [
+            { recipient: "bc1", domain: Url.Host.from_str("elsewhere.com")? },
+            { recipient: "bc2", domain: Url.Host.from_str("example.com")? },
+        ],
+    })
+    actual = Url.from_str("mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link&body=Please provide feedback.&cc=cc1@elsewhere.com,cc2@example.com&X-Foo=1&bcc=bc1@elsewhere.com,bc2@example.com")?
+    actual == expected
+}
+
+expect {
     dbg Url.from_str("javascript:alert(1)")
     Err(UnsupportedScheme) == Url.from_str("javascript:alert(1)")
 }
@@ -749,9 +780,14 @@ urls = [
     "http://example.com/one/index.html?k=v&x=y",
     "http://example.com/one/index.html?k",
     "#top",
+    "?a=b",
     "#my%20section",
     "docs",
     "docs/",
+    "/search?q=a%3Ab",
+    "docs/page%3A2.html",
+    "mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link&body=Please%20provide%20feedback.&cc=cc1%40elsewhere.com%2Ccc2%40example.com&bcc=bc1%40elsewhere.com%2Cbc2%40example.com",
+
 ]
 
 expect {
