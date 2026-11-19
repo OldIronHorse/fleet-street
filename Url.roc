@@ -26,8 +26,14 @@ Url := [].{
                 MailTo(mt) => {
                     subject = if mt.subject.is_empty() [] else ["subject=${url_encode_(mt.subject)}"]
                     body = if mt.body.is_empty() [] else ["body=${url_encode_(mt.body)}"]
-                    cc = if mt.cc.is_empty() [] else ["cc=${mt.cc.map(Address.url_encode) |> Str.join_with(",")}"]
-                    bcc = if mt.bcc.is_empty() []  else ["bcc=${mt.bcc.map(Address.url_encode) |> Str.join_with(",")}"]
+                    cc = if mt.cc.is_empty()
+                        []
+                    else
+                        ["cc=${mt.cc.map(|a| a.to_str() |> url_encode_()) |> Str.join_with(",")}"]
+                    bcc = if mt.bcc.is_empty()
+                        []
+                    else
+                        ["bcc=${mt.bcc.map(|a| a.to_str() |> url_encode_()) |> Str.join_with(",")}"]
                     args = [subject, body, cc, bcc]
                         .join()
                         |> Str.join_with("&")
@@ -75,7 +81,9 @@ Url := [].{
                     }) {
                 Ok(state) if state.total > 0 and state.label > 0  and state.dash.not() =>
                     Ok({ name: host.with_ascii_lowercased() })
-                _ => Err(InvalidHost)
+                _ => {
+                    Err(InvalidHost)
+                }
             }
 
         to_str : Host -> Str
@@ -181,19 +189,24 @@ Url := [].{
         }
     }
 
-    QueryParam := [KeyValue(Str, Str), Key(Str)].{
+    QueryParam := [KeyValue(Str, Str), Key(Str), KeyList(Str, List(Str))].{
         url_encode : QueryParam -> Str
         url_encode =|q|
             match q {
                 Key(k) => url_encode_(k)
                 KeyValue(k, v) => "${url_encode_(k)}=${url_encode_(v)}"
+                KeyList(k, vs) => "${url_encode_(k)}=${vs.map(url_encode_) |> Str.join_with(",")}"
             }
 
         from_str : Str -> Try(QueryParam, _)
         from_str = |s|
             match s {
                 "${key}=${value}" =>
-                    Ok(KeyValue(url_decode(key)?, url_decode(value)?))
+                    match value.split_on(",") {
+                        [_] =>
+                            Ok(KeyValue(url_decode(key)?, url_decode(value)?))
+                        vs => Ok(KeyList(key, vs.map_try(url_decode)?))
+                    }
                 _ =>
                     Ok(Key(url_decode(s)?))
             }
@@ -204,6 +217,8 @@ Url := [].{
                 (Key(a), Key(b)) => a == b
                 (KeyValue(ak, av), KeyValue(bk, bv)) =>
                     ak.with_ascii_lowercased() == bk.with_ascii_lowercased() and av == bv
+                (KeyList(ak, av), KeyList(bk, bv)) =>
+                    ak.with_ascii_lowercased() == bk.with_ascii_lowercased() and av == bv
                 _ => False
             }
     }
@@ -212,6 +227,10 @@ Url := [].{
         url_encode : Address -> Str
         url_encode = |addr|
             "${url_encode_(addr.recipient)}@${url_encode_(addr.domain.to_str())}"
+
+        to_str : Address -> Str
+        to_str = |addr|
+            "${addr.recipient}@${addr.domain.to_str()}"
 
         is_eq = |this, that|
             this.recipient == that.recipient
@@ -251,17 +270,14 @@ Url := [].{
                         KeyValue("subject", value) => { ..spec, subject: value } |> Ok
                         KeyValue("body", value) => { ..spec, body: value } |> Ok
                         KeyValue("cc", value) =>
-                            { ..spec,
-                                cc: value.split_on(",")
-                                    .drop_if(Str.is_empty)
-                                    .map_try(Address.from_str)?
-                            } |> Ok
+                            { ..spec, cc: spec.cc.append(Address.from_str(value)?) } |> Ok
+                        KeyList("cc", values) => {
+                            { ..spec, cc: spec.cc.concat(values.map_try(Address.from_str)?) } |> Ok
+                        }
                         KeyValue("bcc", value) =>
-                            { ..spec,
-                                bcc: value.split_on(",")
-                                    .drop_if(Str.is_empty)
-                                    .map_try(Address.from_str)?
-                            } |> Ok
+                            { ..spec, bcc: spec.bcc.append(Address.from_str(value)?) } |> Ok
+                        KeyList("bcc", values) =>
+                            { ..spec, bcc: spec.bcc.concat(values.map_try(Address.from_str)?) } |> Ok
                         _ => Ok(spec) #ignore other params
                     })
         }
@@ -579,8 +595,6 @@ expect {
             { recipient: "bc2", domain: Url.Host.from_str("example.com")? },
         ],
     }) |> Url.to_str()
-    dbg actual
-    dbg expected
     actual == expected
 }
 
@@ -763,7 +777,6 @@ expect {
 }
 
 expect {
-    dbg Url.from_str("javascript:alert(1)")
     Err(UnsupportedScheme) == Url.from_str("javascript:alert(1)")
 }
 expect Err(UnsupportedScheme) == Url.from_str("data:text/html,x")
@@ -786,11 +799,14 @@ urls = [
     "docs/",
     "/search?q=a%3Ab",
     "docs/page%3A2.html",
-    "mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link&body=Please%20provide%20feedback.&cc=cc1%40elsewhere.com%2Ccc2%40example.com&bcc=bc1%40elsewhere.com%2Cbc2%40example.com",
+    "mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link&body=Please%20provide%20feedback.&cc=cc1%40elsewhere.com,cc2%40example.com&bcc=bc1%40elsewhere.com,bc2%40example.com",
 
 ]
 
 expect {
-    dbg urls.map_try(|u| u |> Url.from_str()?.to_str() |> Ok)
     urls.map_try(|u| Ok(u |> Url.from_str()?.to_str() == u))?.all(|b| b)
 }
+
+expect Key("a") == QueryParam.from_str("a")?
+expect KeyValue("a", "b") == QueryParam.from_str("a=b")?
+expect KeyList("a", ["b", "c"]) == QueryParam.from_str("a=b,c")?
