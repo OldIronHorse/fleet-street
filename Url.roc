@@ -20,7 +20,8 @@ Url := [].{
                     port = hs.port.map_ok(|p| ":${p.to_str()}").ok_or("")
                     p = path(hs.path)
                     path_ = if p.is_empty() "" else "/${p}"
-                    "${hs.scheme.to_str()}://${hs.host.to_str()}${port}${path_}${query(hs.query)}${fragment(hs.fragment)}"
+                    trailing = if hs.trailing "/" else ""
+                    "${hs.scheme.to_str()}://${hs.host.to_str()}${port}${path_}${trailing}${query(hs.query)}${fragment(hs.fragment)}"
                 }
                 MailTo(mt) => {
                     subject = if mt.subject.is_empty() [] else ["subject=${url_encode_(mt.subject)}"]
@@ -34,27 +35,24 @@ Url := [].{
                 }
                 Relative(rs) => {
                     root = if rs.root "/" else ""
-                    "${root}${path(rs.path)}${query(rs.query)}${fragment(rs.fragment)}"
+                    trailing = if rs.trailing "/" else ""
+                    "${root}${path(rs.path)}${trailing}${query(rs.query)}${fragment(rs.fragment)}"
                 }
             }
 
         from_str : Str -> Try(Url, _)
         from_str = |s|
-            match s {
-                "${scheme}:${_}" =>
-                    match scheme {
-                        "http" | "https" | "HTTP" | "HTTPS" =>
-                            s |> HttpSpec.from_str()? |> Http |> Ok
-                        "mailto" | "MAILTO" =>
-                            s |> MailToSpec.from_str()? |> MailTo |> Ok
-                        _ =>
-                            Err(UnsupportedScheme(scheme))
-                    }
-                rel =>
-                    if rel.is_empty()
+            match Scheme.of_str(s) {
+                Ok("http") | Ok("https") =>
+                    s |> HttpSpec.from_str()? |> Http |> Ok
+                Ok("mailto") =>
+                    s |> MailToSpec.from_str()? |> MailTo |> Ok
+                Err(NoScheme) =>
+                    if s.is_empty() 
                         Err(EmptyUrl)
                     else
-                        RelativeSpec.from_str(rel)? |> Relative |> Ok
+                        RelativeSpec.from_str(s)? |> Relative |> Ok
+                _ => Err(UnsupportedScheme)
             }
     }
 
@@ -92,6 +90,7 @@ Url := [].{
         host: Host,
         port: Try(U16, [None]) ?? Err(None),
         path: List(Str) ?? [],
+        trailing: Bool ?? False,
         scheme: Scheme ?? Https,
         query: List(QueryParam) ?? [],
         fragment: Try(Str, [None]) ?? Err(None),
@@ -100,6 +99,7 @@ Url := [].{
             this.host == that.host
                 and this.port == that.port
                 and this.path == that.path
+                and this.trailing == that.trailing
                 and this.scheme == that.scheme
                 and this.query == that.query
                 and this.fragment ==  that.fragment
@@ -123,6 +123,7 @@ Url := [].{
                         path: path_.split_on("/")
                             .map_try(url_decode)?
                             .drop_if(Str.is_empty),
+                        trailing: path_.ends_with("/"),
                         fragment: if fragment_.is_empty() Err(None) else Ok(url_decode(fragment_)?),
                         query: query_
                             .split_on("&")
@@ -155,6 +156,29 @@ Url := [].{
                 "https" | "HTTPS" => Ok(Https)
                 _ => Err(InvalidScheme(s))
             }
+
+        scheme_letters : Set(U8)
+        scheme_letters = "abcdefghijklmnopqrstuvwxyz".to_utf8() |> Set.from_list()
+        scheme_chars : Set(U8)
+        scheme_chars = Set.from_list("0123456789+-.".to_utf8()).union(scheme_letters)
+
+        of_str : Str -> Try(Str, _)
+        of_str = |s| {
+            do : List(U8), List(U8) -> Try(Str,_)
+            do = |cs, scheme|
+                match cs {
+                    [':', ..] => Ok(Str.from_utf8(scheme)?)
+                    [c, .. as csr] if scheme_chars.contains(c) =>
+                        do(csr, scheme.append(c))
+                    _ => Err(NoScheme)
+                }
+
+            match s.with_ascii_lowercased().to_utf8() {
+                [first, .. as rest] if scheme_letters.contains(first) =>
+                    do(rest, [first])
+                _ => Err(NoScheme)
+            }
+        }
     }
 
     QueryParam := [KeyValue(Str, Str), Key(Str)].{
@@ -245,12 +269,14 @@ Url := [].{
     RelativeSpec := {
         root: Bool ?? False,
         path: List(Str) ?? [],
+        trailing: Bool ?? False,
         fragment: Try(Str, [None]) ?? Err(None),
         query: List(QueryParam) ?? [],
     }.{
         is_eq = |this, that|
             this.root == that.root
                 and this.path == that.path
+                and this.trailing == that.trailing
                 and this.fragment == that.fragment
                 and this.query == that.query
 
@@ -264,12 +290,13 @@ Url := [].{
                 ["", "", ..] => Err(InvalidPath(p))
                 path_ =>
                     RelativeSpec.{
-                        root: path_.starts_with([""]),
+                        root: p.starts_with("/"),
                         path: path_.drop_if(Str.is_empty).map_try(url_decode)?,
+                        trailing: p.ends_with("/"),
                         query: query_.split_on("&")
                             .drop_if(Str.is_empty)
                             .map_try(QueryParam.from_str)?,
-                        fragment: if fragment_.is_empty() Err(None) else Ok(fragment_)
+                        fragment: if fragment_.is_empty() Err(None) else Ok(url_decode(fragment_)?)
                     } |> Ok
             }
         }
@@ -704,22 +731,30 @@ expect {
     actual == expected
 }
 
-expect Err(UnsupportedScheme("javascript")) == Url.from_str("javascript:alert(1)")
-expect Err(UnsupportedScheme("data")) == Url.from_str("data:text/html,x")
+expect {
+    dbg Url.from_str("javascript:alert(1)")
+    Err(UnsupportedScheme) == Url.from_str("javascript:alert(1)")
+}
+expect Err(UnsupportedScheme) == Url.from_str("data:text/html,x")
 expect Err(EmptyUrl) == Url.from_str("")
 expect Err(InvalidPath("//evil.com/x")) == Url.from_str("//evil.com/x")
 
 urls = [
     "http://example.com",
-    "http://example.com",
+    "http://example.com/one/two/",
     "http://example.com:80/index.html",
     "http://example.com/index.html",
     "http://example.com/one/index.html",
     "http://example.com/one/index.html#section2",
     "http://example.com/one/index.html?k=v&x=y",
     "http://example.com/one/index.html?k",
+    "#top",
+    "#my%20section",
+    "docs",
+    "docs/",
 ]
 
 expect {
+    dbg urls.map_try(|u| u |> Url.from_str()?.to_str() |> Ok)
     urls.map_try(|u| Ok(u |> Url.from_str()?.to_str() == u))?.all(|b| b)
 }
