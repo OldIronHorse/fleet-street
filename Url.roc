@@ -110,7 +110,7 @@ Url := [].{
                 and this.trailing == that.trailing
                 and this.scheme == that.scheme
                 and this.query == that.query
-                and this.fragment ==  that.fragment
+                and this.fragment == that.fragment
 
         from_str : Str -> Try(HttpSpec, _)
         from_str = |s|
@@ -189,24 +189,19 @@ Url := [].{
         }
     }
 
-    QueryParam := [KeyValue(Str, Str), Key(Str), KeyList(Str, List(Str))].{
+    QueryParam := [KeyValue(Str, Str), Key(Str)].{
         url_encode : QueryParam -> Str
         url_encode =|q|
             match q {
                 Key(k) => url_encode_(k)
                 KeyValue(k, v) => "${url_encode_(k)}=${url_encode_(v)}"
-                KeyList(k, vs) => "${url_encode_(k)}=${vs.map(url_encode_) |> Str.join_with(",")}"
             }
 
         from_str : Str -> Try(QueryParam, _)
         from_str = |s|
             match s {
                 "${key}=${value}" =>
-                    match value.split_on(",") {
-                        [_] =>
-                            Ok(KeyValue(url_decode(key)?, url_decode(value)?))
-                        vs => Ok(KeyList(key, vs.map_try(url_decode)?))
-                    }
+                    Ok(KeyValue(url_decode(key)?, url_decode(value)?))
                 _ =>
                     Ok(Key(url_decode(s)?))
             }
@@ -215,10 +210,7 @@ Url := [].{
         is_eq = |this, that|
             match (this, that) {
                 (Key(a), Key(b)) => a == b
-                (KeyValue(ak, av), KeyValue(bk, bv)) =>
-                    ak.with_ascii_lowercased() == bk.with_ascii_lowercased() and av == bv
-                (KeyList(ak, av), KeyList(bk, bv)) =>
-                    ak.with_ascii_lowercased() == bk.with_ascii_lowercased() and av == bv
+                (KeyValue(ak, av), KeyValue(bk, bv)) => ak == bk and av == bv
                 _ => False
             }
     }
@@ -264,20 +256,21 @@ Url := [].{
             { before: _scheme, after: address } = sa.split_first(":")?
             params.split_on("&")
                 .drop_if(Str.is_empty)
-                .map_try(QueryParam.from_str)?
+                .map(|a| a.split_first("="))
                 .fold_try(MailToSpec.{ to: Address.from_str(address)? }, |spec, p|
                     match p {
-                        KeyValue("subject", value) => { ..spec, subject: value } |> Ok
-                        KeyValue("body", value) => { ..spec, body: value } |> Ok
-                        KeyValue("cc", value) =>
-                            { ..spec, cc: spec.cc.append(Address.from_str(value)?) } |> Ok
-                        KeyList("cc", values) => {
-                            { ..spec, cc: spec.cc.concat(values.map_try(Address.from_str)?) } |> Ok
-                        }
-                        KeyValue("bcc", value) =>
-                            { ..spec, bcc: spec.bcc.append(Address.from_str(value)?) } |> Ok
-                        KeyList("bcc", values) =>
-                            { ..spec, bcc: spec.bcc.concat(values.map_try(Address.from_str)?) } |> Ok
+                        Ok({ before, after }) if before.caseless_ascii_equals("subject") =>
+                            { ..spec, subject: url_decode(after)? } |> Ok
+                        Ok({ before, after }) if before.caseless_ascii_equals("body") =>
+                            { ..spec, body: url_decode(after)? } |> Ok
+                        Ok({ before, after }) if before.caseless_ascii_equals("cc") =>
+                            { ..spec, cc: spec.cc.concat(
+                                after.split_on(",")
+                                    .map_try(|a| a |> url_decode()? |> Address.from_str())?) } |> Ok
+                        Ok({ before, after }) if before.caseless_ascii_equals("bcc") =>
+                            { ..spec, bcc: spec.bcc.concat(
+                                after.split_on(",")
+                                    .map_try(|a| a |> url_decode()? |> Address.from_str())?) } |> Ok
                         _ => Ok(spec) #ignore other params
                     })
         }
@@ -810,4 +803,3 @@ expect {
 
 expect Key("a") == QueryParam.from_str("a")?
 expect KeyValue("a", "b") == QueryParam.from_str("a=b")?
-expect KeyList("a", ["b", "c"]) == QueryParam.from_str("a=b,c")?
