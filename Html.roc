@@ -448,7 +448,7 @@ expect {
     expected ="<a href=\"mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link&amp;body=Please%20provide%20feedback.&amp;cc=cc1%40elsewhere.com,cc2%40example.com&amp;bcc=bc1%40elsewhere.com,bc2%40example.com\">Send Feedback</a>"
     actual = Link({
         url: MailTo({
-            to: { recipient: "someone", domain: Url.Host.from_str("example.com")? },
+            to: [{ recipient: "someone", domain: Url.Host.from_str("example.com")? }],
             subject: "Feedback Request & Link",
             body: "Please provide feedback.",
             cc: [

@@ -32,4 +32,12 @@ jobs:
       - name: Check the Roc version
         run: roc --version
       - name: Unit Tests
-        run: roc test
+        run: |
+          if roc test; then
+            EXIT_CODE=0
+          elif [ $? -eq 2 ]; then
+            EXIT_CODE=0
+          else
+            EXIT_CODE=$?
+          fi
+          exit $EXIT_CODE

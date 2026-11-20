@@ -37,7 +37,7 @@ Url := [].{
                     args = [subject, body, cc, bcc]
                         .join()
                         |> Str.join_with("&")
-                    "mailto:${mt.to.url_encode()}${if args.is_empty() "" else args.with_prefix("?")}"
+                    "mailto:${mt.to.map(Address.url_encode) |> Str.join_with(",")}${if args.is_empty() "" else args.with_prefix("?")}"
                 }
                 Relative(rs) => {
                     root = if rs.root "/" else ""
@@ -53,12 +53,13 @@ Url := [].{
                     s |> HttpSpec.from_str()? |> Http |> Ok
                 Ok("mailto") =>
                     s |> MailToSpec.from_str()? |> MailTo |> Ok
+                Ok(scheme) => Err(UnsupportedScheme(scheme))
                 Err(NoScheme) =>
                     if s.is_empty() 
                         Err(EmptyUrl)
                     else
                         RelativeSpec.from_str(s)? |> Relative |> Ok
-                _ => Err(UnsupportedScheme)
+                _ => Err(InvalidUrl(s)  )
             }
     }
 
@@ -159,9 +160,9 @@ Url := [].{
 
         from_str : Str -> Try(Scheme, _)
         from_str = |s|
-            match s {
-                "http" | "HTTP" => Ok(Http)
-                "https" | "HTTPS" => Ok(Https)
+            match s.with_ascii_lowercased() {
+                "http" => Ok(Http)
+                "https" => Ok(Https)
                 _ => Err(InvalidScheme(s))
             }
 
@@ -230,14 +231,14 @@ Url := [].{
 
         from_str : Str -> Try(Address, _)
         from_str = |s|
-            match s {
-                "${recipient}@${domain}" => Ok({ recipient, domain: Host.from_str(domain)? })
+            match s.split_last("@") {
+                Ok({ before, after }) => Ok({ recipient: before, domain: Host.from_str(after)? })
                 _ => Err(InvalidAddress(s))
             }
     }
 
     MailToSpec := {
-        to: Address,
+        to: List(Address) ?? [],
         subject: Str ?? "",
         body: Str ?? "",
         cc: List(Address) ?? [],
@@ -253,26 +254,33 @@ Url := [].{
         from_str : Str -> Try(MailToSpec, _)
         from_str = |s| {
             { before: sa, after: params } = s.split_first("?").ok_or({ before:s, after: "" })
-            { before: _scheme, after: address } = sa.split_first(":")?
+            { before: _scheme, after: addresses } = sa.split_first(":")?
             params.split_on("&")
                 .drop_if(Str.is_empty)
                 .map(|a| a.split_first("="))
-                .fold_try(MailToSpec.{ to: Address.from_str(address)? }, |spec, p|
-                    match p {
-                        Ok({ before, after }) if before.caseless_ascii_equals("subject") =>
-                            { ..spec, subject: url_decode(after)? } |> Ok
-                        Ok({ before, after }) if before.caseless_ascii_equals("body") =>
-                            { ..spec, body: url_decode(after)? } |> Ok
-                        Ok({ before, after }) if before.caseless_ascii_equals("cc") =>
-                            { ..spec, cc: spec.cc.concat(
-                                after.split_on(",")
-                                    .map_try(|a| a |> url_decode()? |> Address.from_str())?) } |> Ok
-                        Ok({ before, after }) if before.caseless_ascii_equals("bcc") =>
-                            { ..spec, bcc: spec.bcc.concat(
-                                after.split_on(",")
-                                    .map_try(|a| a |> url_decode()? |> Address.from_str())?) } |> Ok
-                        _ => Ok(spec) #ignore other params
-                    })
+                .fold_try(MailToSpec.{
+                    to: addresses.split_on(",")
+                        .drop_if(Str.is_empty)
+                        .map_try(|a| a |> url_decode()? |> Address.from_str())?
+                },
+                    |spec, p|
+                        match p {
+                            Ok({ before, after }) if before.caseless_ascii_equals("subject") =>
+                                { ..spec, subject: url_decode(after)? } |> Ok
+                            Ok({ before, after }) if before.caseless_ascii_equals("body") =>
+                                { ..spec, body: url_decode(after)? } |> Ok
+                            Ok({ before, after }) if before.caseless_ascii_equals("cc") =>
+                                { ..spec, cc: spec.cc.concat(
+                                    after.split_on(",")
+                                        .map_try(|a| a |> url_decode()? |> Address.from_str())?)
+                                } |> Ok
+                            Ok({ before, after }) if before.caseless_ascii_equals("bcc") =>
+                                { ..spec, bcc: spec.bcc.concat(
+                                    after.split_on(",")
+                                        .map_try(|a| a |> url_decode()? |> Address.from_str())?)
+                                } |> Ok
+                            _ => Ok(spec) #ignore other params
+                        })
         }
     }
 
@@ -303,7 +311,7 @@ Url := [].{
                 RelativeSpec.{
                     root: p.starts_with("/"),
                     path: path_.drop_if(Str.is_empty).map_try(url_decode)?,
-                    trailing: p.ends_with("/"),
+                    trailing: p.ends_with("/") and p.count_utf8_bytes() > 1,
                     query: query_.split_on("&")
                         .drop_if(Str.is_empty)
                         .map_try(QueryParam.from_str)?,
@@ -315,7 +323,7 @@ Url := [].{
 }
 
 path = |ps|
-    ps |> drop_while(Str.is_empty)
+    ps.drop_if(Str.is_empty)
     .map(url_encode_)
     |> Str.join_with("/")
 
@@ -420,7 +428,7 @@ expect "https://example.com/one/two/three/four.html"
     == Http({ host: Host.from_str("example.com")?, path: ["one", "two", "three", "four.html"] })
         |> Url.to_str()
 
-expect "https://example.com/one/two//three/four.html"
+expect "https://example.com/one/two/three/four.html"
     == Http({ host: Host.from_str("example.com")?, path: ["one", "two", "", "three", "four.html"] })
         |> Url.to_str()
 
@@ -471,14 +479,13 @@ expect "https://example.com/one/two/three/four.html"
     == Http({
         host: Host.from_str("example.com")?,
         path: ["one", "two", "three", "four.html"],
-        query: [],
     }) |> Url.to_str()
 
 expect "https://example.com/one/two/three/"
     == Http({
         host: Host.from_str("example.com")?,
-        path: ["one", "two", "three", ""],
-        query: [],
+        path: ["one", "two", "three"],
+        trailing: True,
     }) |> Url.to_str()
 
 expect "https://example.com#intro"
@@ -545,7 +552,7 @@ expect Err(InvalidHost) == Host.from_str("exaémple.com")
 expect "%0A" == url_encode_("\n")
 
 expect "about.html" == Relative({ path: ["", "", "about.html"] }) |> Url.to_str()
-expect "about/" == Relative({ path: ["", "", "about", ""] }) |> Url.to_str()
+expect "about/" == Relative({ path: ["about"], trailing: True }) |> Url.to_str()
 expect "#intro" == Relative({ fragment: Ok("intro") }) |> Url.to_str()
 expect {
     expected = "/about.html"
@@ -568,7 +575,7 @@ expect "/?name=Joe%20Bl%26ggs&age=4%235#intro"
 expect {
     expected = "mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link"
     actual = MailTo({
-        to: { recipient: "someone", domain: Url.Host.from_str("example.com")? },
+        to: [{ recipient: "someone", domain: Url.Host.from_str("example.com")? }],
         subject: "Feedback Request & Link",
     }) |> Url.to_str()
     actual == expected
@@ -577,7 +584,7 @@ expect {
 expect {
     expected ="mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link&body=Please%20provide%20feedback.&cc=cc1%40elsewhere.com,cc2%40example.com&bcc=bc1%40elsewhere.com,bc2%40example.com"
     actual = MailTo({
-        to: { recipient: "someone", domain: Url.Host.from_str("example.com")? },
+        to: [{ recipient: "someone", domain: Url.Host.from_str("example.com")? }],
         subject: "Feedback Request & Link",
         body: "Please provide feedback.",
         cc: [
@@ -727,7 +734,7 @@ expect {
 
 expect {
     expected = MailTo({
-        to: { recipient: "someone", domain: Url.Host.from_str("example.com")? },
+        to: [{ recipient: "someone", domain: Url.Host.from_str("example.com")? }],
         subject: "Feedback Request & Link",
     })
     actual = Url.from_str("mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link")?
@@ -736,7 +743,7 @@ expect {
 
 expect {
     expected = MailTo({
-        to: { recipient: "someone", domain: Url.Host.from_str("example.com")? },
+        to: [{ recipient: "someone", domain: Url.Host.from_str("example.com")? }],
         subject: "Feedback Request & Link",
         body: "Please provide feedback.",
         cc: [
@@ -754,7 +761,7 @@ expect {
 
 expect {
     expected = MailTo({
-        to: { recipient: "someone", domain: Url.Host.from_str("example.com")? },
+        to: [{ recipient: "someone", domain: Url.Host.from_str("example.com")? }],
         subject: "Feedback Request & Link",
         body: "Please provide feedback.",
         cc: [
@@ -771,9 +778,9 @@ expect {
 }
 
 expect {
-    Err(UnsupportedScheme) == Url.from_str("javascript:alert(1)")
+    Err(UnsupportedScheme("javascript")) == Url.from_str("javascript:alert(1)")
 }
-expect Err(UnsupportedScheme) == Url.from_str("data:text/html,x")
+expect Err(UnsupportedScheme("data")) == Url.from_str("data:text/html,x")
 expect Err(EmptyUrl) == Url.from_str("")
 expect Err(InvalidPath("//evil.com/x")) == Url.from_str("//evil.com/x")
 
@@ -803,3 +810,22 @@ expect {
 
 expect Key("a") == QueryParam.from_str("a")?
 expect KeyValue("a", "b") == QueryParam.from_str("a=b")?
+
+expect {
+    expected = Relative(RelativeSpec.{ root: True })
+    actual = Url.from_str("/")?
+    actual == expected
+}
+
+expect {
+    "http://example.com" == "Http://EXAMPLE.com/" |> Url.from_str()?.to_str()
+}
+
+expect QueryParam.from_str("A=1")? != QueryParam.from_str("a=1")?
+expect KeyValue("k", "1,2") == QueryParam.from_str("k=1%2C2")?
+expect "a%20b=1" == "a%20b=1" |> QueryParam.from_str()?.url_encode()
+expect {
+    expected = MailTo({ subject: "hi" })
+    actual = Url.from_str("mailto:?subject=hi")?
+    actual == expected
+}
