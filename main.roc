@@ -121,7 +121,7 @@ make_html! = |index, input_path, output_path|
                                 match p.write_utf8!(
                                     path.read_utf8!()?
                                     |> Markdown.parse_str()
-                                    |> MdToHtml.doc(frontmatter.title, [Url.Url.from_str(frontmatter.css)?])
+                                    |> MdToHtml.doc(frontmatter.title, [Url.Url.from_str(frontmatter.css)?])?
                                     .render()) {
                                         Ok({}) => Ok(errors)
                                         Err(e) => Ok(errors.append((path, e)))
@@ -131,7 +131,7 @@ make_html! = |index, input_path, output_path|
                                 match p.write_utf8!(
                                     path.read_utf8!()?
                                     |> Markdown.parse_str()
-                                    |> MdToHtml.doc("", [])
+                                    |> MdToHtml.doc("", [])?
                                     .render()) {
                                         Ok({}) => Ok(errors)
                                         Err(e) => Ok(errors.append((path, e)))
@@ -373,3 +373,11 @@ expect "1.html" == set_ext("1.md", "html")?
 expect "one/two/three/1.html" == set_ext("one/two/three/1.md", "html")?
 expect "one/two/thr.ee/1.html" == set_ext("one/two/thr.ee/1.md", "html")?
 expect "/one/two/three/one.1.html" == set_ext("/one/two/three/one.1.md", "html")?
+
+assert_equal = |expected, actual|
+    if actual == expected
+        True
+    else {
+        dbg { expected, actual }
+        False
+    }
