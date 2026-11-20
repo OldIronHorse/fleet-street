@@ -445,7 +445,7 @@ expect "<a href=\"https://example.com/one%20mor%C3%A9%3F%23%2F%25/two.html\">The
         label: [Text("The Link")],
     }) |> render_inline()
 expect {
-    expected ="<a href=\"mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link&amp;body=Please%20provide%20feedback.&amp;cc=cc1%40elsewhere.com,cc2%40example.com&amp;bcc=bc1%40elsewhere.com,bc2%40example.com\">Send Feedback</a>"
+    expected ="<a href=\"mailto:someone%40example.com?subject=Feedback%20Request%20%26%20Link&amp;body=Please%20provide%20feedback.&amp;cc=cc1%40elsewhere.com,cc2%40example.com&amp;bcc=bc1%40elsewhere.com,bc2%40example.com\">Send Feedback</a>"
     actual = Link({
         url: MailTo({
             to: [{ recipient: "someone", domain: Url.Host.from_str("example.com")? }],

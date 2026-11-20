@@ -29,11 +29,11 @@ Url := [].{
                     cc = if mt.cc.is_empty()
                         []
                     else
-                        ["cc=${mt.cc.map(|a| a.to_str() |> url_encode_()) |> Str.join_with(",")}"]
+                        ["cc=${mt.cc.map(|a| a.url_encode()) |> Str.join_with(",")}"]
                     bcc = if mt.bcc.is_empty()
                         []
                     else
-                        ["bcc=${mt.bcc.map(|a| a.to_str() |> url_encode_()) |> Str.join_with(",")}"]
+                        ["bcc=${mt.bcc.map(|a| a.url_encode()) |> Str.join_with(",")}"]
                     args = [subject, body, cc, bcc]
                         .join()
                         |> Str.join_with("&")
@@ -41,14 +41,15 @@ Url := [].{
                 }
                 Relative(rs) => {
                     root = if rs.root "/" else ""
-                    trailing = if rs.trailing "/" else ""
-                    "${root}${path(rs.path)}${trailing}${query(rs.query)}${fragment(rs.fragment)}"
+                    path_ = path(rs.path)
+                    trailing = if rs.trailing and path_.is_empty().not() "/" else ""
+                    "${root}${path_}${trailing}${query(rs.query)}${fragment(rs.fragment)}"
                 }
             }
 
         from_str : Str -> Try(Url, _)
         from_str = |s|
-            match Scheme.of_str(s) {
+            match Scheme.scheme_of(s) {
                 Ok("http") | Ok("https") =>
                     s |> HttpSpec.from_str()? |> Http |> Ok
                 Ok("mailto") =>
@@ -171,8 +172,8 @@ Url := [].{
         scheme_chars : Set(U8)
         scheme_chars = Set.from_list("0123456789+-.".to_utf8()).union(scheme_letters)
 
-        of_str : Str -> Try(Str, _)
-        of_str = |s| {
+        scheme_of : Str -> Try(Str, _)
+        scheme_of = |s| {
             do : List(U8), List(U8) -> Try(Str,_)
             do = |cs, scheme|
                 match cs {
@@ -202,9 +203,10 @@ Url := [].{
         from_str = |s|
             match s {
                 "${key}=${value}" =>
-                    Ok(KeyValue(url_decode(key)?, url_decode(value)?))
+                    Ok(KeyValue(url_decode(key.replace_each("+", " "))?,
+                        url_decode(value.replace_each("+", " "))?))
                 _ =>
-                    Ok(Key(url_decode(s)?))
+                    Ok(Key(url_decode(s.replace_each("+", " "))?))
             }
 
         is_eq : QueryParam, QueryParam -> Bool
@@ -219,7 +221,7 @@ Url := [].{
     Address := { recipient: Str, domain: Host }.{
         url_encode : Address -> Str
         url_encode = |addr|
-            "${url_encode_(addr.recipient)}@${url_encode_(addr.domain.to_str())}"
+            url_encode_(addr.to_str())
 
         to_str : Address -> Str
         to_str = |addr|
@@ -272,11 +274,13 @@ Url := [].{
                             Ok({ before, after }) if before.caseless_ascii_equals("cc") =>
                                 { ..spec, cc: spec.cc.concat(
                                     after.split_on(",")
+                                        .drop_if(Str.is_empty)
                                         .map_try(|a| a |> url_decode()? |> Address.from_str())?)
                                 } |> Ok
                             Ok({ before, after }) if before.caseless_ascii_equals("bcc") =>
                                 { ..spec, bcc: spec.bcc.concat(
                                     after.split_on(",")
+                                        .drop_if(Str.is_empty)
                                         .map_try(|a| a |> url_decode()? |> Address.from_str())?)
                                 } |> Ok
                             _ => Ok(spec) #ignore other params
@@ -338,13 +342,6 @@ query = |qs|
 fragment = |fg|
     fg.map_ok(|f| "#${url_encode_(f)}").ok_or("")
 
-drop_while : List(a), (a -> Bool) -> List(a)
-drop_while = |l, f|
-    match l {
-        [h, .. as rest] if f(h) => rest |> drop_while(f)
-        _ => l
-    }
-
 url_whitelist = "-._~abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
     .to_utf8()
     |> Set.from_list()
@@ -371,7 +368,7 @@ url_decode = |s| {
         match cs {
             [] => Ok(decoded)
             ['%', h, l, .. as rest] =>
-                decode(rest, decoded.append(from_hex(h, l)?))
+                decode(rest, decoded.append(from_hex(h, l).map_err(|_| InvalidCode([h, l]))?))
             ['%', ..] => Err(InvalidUrlEncoding(s))
             [c, .. as rest] =>
                 decode(rest, decoded.append(c))
@@ -573,7 +570,7 @@ expect "/?name=Joe%20Bl%26ggs&age=4%235#intro"
     }) |> Url.to_str()
 
 expect {
-    expected = "mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link"
+    expected = "mailto:someone%40example.com?subject=Feedback%20Request%20%26%20Link"
     actual = MailTo({
         to: [{ recipient: "someone", domain: Url.Host.from_str("example.com")? }],
         subject: "Feedback Request & Link",
@@ -582,7 +579,7 @@ expect {
 }
 
 expect {
-    expected ="mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link&body=Please%20provide%20feedback.&cc=cc1%40elsewhere.com,cc2%40example.com&bcc=bc1%40elsewhere.com,bc2%40example.com"
+    expected ="mailto:someone%40example.com?subject=Feedback%20Request%20%26%20Link&body=Please%20provide%20feedback.&cc=cc1%40elsewhere.com,cc2%40example.com&bcc=bc1%40elsewhere.com,bc2%40example.com"
     actual = MailTo({
         to: [{ recipient: "someone", domain: Url.Host.from_str("example.com")? }],
         subject: "Feedback Request & Link",
@@ -596,7 +593,7 @@ expect {
             { recipient: "bc2", domain: Url.Host.from_str("example.com")? },
         ],
     }) |> Url.to_str()
-    actual == expected
+    assert_equal(expected, actual)
 }
 
 expect Relative(RelativeSpec.{ path: ["simple.css"] }) == Url.from_str("simple.css")?
@@ -778,6 +775,48 @@ expect {
 }
 
 expect {
+    expected = MailTo({
+        to: [{ recipient: "someone", domain: Url.Host.from_str("example.com")? }],
+        subject: "Feedback Request & Link",
+        body: "Please provide feedback.",
+        bcc: [
+            { recipient: "bc1", domain: Url.Host.from_str("elsewhere.com")? },
+            { recipient: "bc2", domain: Url.Host.from_str("example.com")? },
+        ],
+    })
+    actual = Url.from_str("mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link&body=Please provide feedback.&cc=&X-Foo=1&bcc=bc1@elsewhere.com,bc2@example.com")?
+    actual == expected
+}
+
+expect {
+    expected = MailTo({
+        to: [{ recipient: "someone", domain: Url.Host.from_str("example.com")? }],
+        subject: "Feedback Request & Link",
+        body: "Please provide feedback.",
+        cc: [
+            { recipient: "cc,1", domain: Url.Host.from_str("elsewhere.com")? },
+            { recipient: "cc2", domain: Url.Host.from_str("example.com")? },
+        ],
+    })
+    actual = Url.from_str("mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link&body=Please provide feedback.&cc=cc%2C1@elsewhere.com,cc2@example.com&X-Foo=1&bcc=")?
+    actual == expected
+}
+
+expect {
+    expected = MailTo({
+        to: [{ recipient: "someone", domain: Url.Host.from_str("example.com")? }],
+        subject: "Feedback Request & Link",
+        body: "Please provide feedback.",
+        cc: [
+            { recipient: "cc,1", domain: Url.Host.from_str("elsewhere.com")? },
+            { recipient: "cc2", domain: Url.Host.from_str("example.com")? },
+        ],
+    })
+    actual = Url.from_str("mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link&body=Please provide feedback.&cc=cc%2C1@elsewhere.com&cc=cc2@example.com&X-Foo=1&bcc=")?
+    actual == expected
+}
+
+expect {
     Err(UnsupportedScheme("javascript")) == Url.from_str("javascript:alert(1)")
 }
 expect Err(UnsupportedScheme("data")) == Url.from_str("data:text/html,x")
@@ -798,18 +837,21 @@ urls = [
     "#my%20section",
     "docs",
     "docs/",
+    "/docs/",
+    "/",
     "/search?q=a%3Ab",
     "docs/page%3A2.html",
-    "mailto:someone@example.com?subject=Feedback%20Request%20%26%20Link&body=Please%20provide%20feedback.&cc=cc1%40elsewhere.com,cc2%40example.com&bcc=bc1%40elsewhere.com,bc2%40example.com",
+    "mailto:?subject=hi",
+    "mailto:a%40x.com,b%40y.com",
+    "mailto:someone%40example.com?subject=Feedback%20Request%20%26%20Link&body=Please%20provide%20feedback.&cc=cc1%40elsewhere.com,cc2%40example.com&bcc=bc1%40elsewhere.com,bc2%40example.com",
 
 ]
 
-expect {
-    urls.map_try(|u| Ok(u |> Url.from_str()?.to_str() == u))?.all(|b| b)
-}
+expect urls.map_try(|u| Ok(assert_equal(u, Url.from_str(u)?.to_str())))?.all(|r| r)
 
 expect Key("a") == QueryParam.from_str("a")?
 expect KeyValue("a", "b") == QueryParam.from_str("a=b")?
+expect KeyValue("a b", "c d") == QueryParam.from_str("a+b=c+d")?
 
 expect {
     expected = Relative(RelativeSpec.{ root: True })
@@ -824,8 +866,31 @@ expect {
 expect QueryParam.from_str("A=1")? != QueryParam.from_str("a=1")?
 expect KeyValue("k", "1,2") == QueryParam.from_str("k=1%2C2")?
 expect "a%20b=1" == "a%20b=1" |> QueryParam.from_str()?.url_encode()
+expect assert_equal("a%20b", "a+b" |> QueryParam.from_str()?.url_encode())
+expect assert_equal("a%2Bb", "a%2Bb" |> QueryParam.from_str()?.url_encode())
 expect {
     expected = MailTo({ subject: "hi" })
     actual = Url.from_str("mailto:?subject=hi")?
     actual == expected
 }
+
+expect Err(InvalidCode(['z', 'z'])) == url_decode("%zz")
+expect Err(InvalidUrlEncoding("%2")) == url_decode("%2")
+expect Err(InvalidUrlEncoding("%")) == url_decode("%")
+
+expect assert_equal("/", Relative(RelativeSpec.{ root: True, trailing: True }) |> Url.to_str())
+expect assert_equal("", Relative(RelativeSpec.{ trailing: True }) |> Url.to_str())
+expect assert_equal("é", url_decode("%c3%a9")?)
+expect assert_equal("%C3%A9", url_encode_("é"))
+expect assert_equal(Err(BadUtf8({ index: 0, problem: InvalidStartByte })), url_decode("%FF"))
+
+expect assert_equal(Err(BadNumStr), Url.from_str("http://user:pw@host/"))
+expect assert_equal(Err(InvalidHost), Url.from_str("http://[::1]/"))
+
+assert_equal = |expected, actual|
+    if actual == expected
+        True
+    else {
+        dbg { expected, actual }
+        False
+    }

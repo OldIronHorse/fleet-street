@@ -1,3 +1,5 @@
 dist/
 generated-docs/
 fleet-street
+.zig-cache/
+main
